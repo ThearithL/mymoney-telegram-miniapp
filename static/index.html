@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="km">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#13795b"><title>លុយខ្ញុំ · MyMoney</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script><script defer src="/static/app.js"></script>
+</head>
+<body>
+<div class="shell">
+<header><div class="brand">◈</div><div><small>MYMONEY</small><h1>លុយខ្ញុំ</h1></div><button id="language" class="pill" aria-label="Change language">EN</button></header>
+<div id="notice" role="status" aria-live="polite"></div>
+<div class="toolbar"><label><span data-i="month">ខែ</span><input id="month" type="month"></label><select id="currency" aria-label="Currency"><option value="KHR">៛ KHR</option><option value="USD">$ USD</option></select></div>
+<main>
+<section id="home" class="page">
+<article class="hero"><div class="hero-top"><span data-i="net">ចំណូល − ចំណាយក្នុងខែ</span><span>↗</span></div><strong id="net">—</strong><p data-i="netHelp">គណនាពីកំណត់ត្រាក្នុងខែដែលបានជ្រើស</p><div class="hero-stats"><div><span data-i="income">ចំណូល</span><b id="income">—</b></div><div><span data-i="expense">ចំណាយ</span><b id="expense">—</b></div></div></article>
+<div class="actions"><button id="addExpense" class="primary">＋ <span data-i="addExpense">កត់ចំណាយ</span></button><button id="addIncome" class="secondary">↗ <span data-i="addIncome">កត់ចំណូល</span></button></div>
+<article class="card"><div class="section-title"><h2 data-i="budget">ថវិកាប្រចាំខែ</h2><button id="manageBudget" class="text-btn" data-i="manage">កំណត់</button></div><div id="budgetSummary"></div><progress id="budgetProgress" max="100" value="0"></progress><p id="budgetHint" class="muted"></p></article>
+<article class="card"><h2 data-i="categories">ចំណាយតាមប្រភេទ</h2><div id="chart"></div></article>
+<div class="section-title"><h2 data-i="recent">កំណត់ត្រាថ្មីៗ</h2><button id="viewAll" class="text-btn" data-i="viewAll">មើលទាំងអស់</button></div><div id="recent"></div>
+</section>
+<section id="history" class="page" hidden><h2 data-i="history">ប្រវត្តិ</h2><input id="search" type="search" placeholder="ស្វែងរក / Search" aria-label="Search history"><div class="chips"><button data-filter="all" class="selected" data-i="all">ទាំងអស់</button><button data-filter="expense" data-i="expense">ចំណាយ</button><button data-filter="income" data-i="income">ចំណូល</button></div><div id="historyList"></div><button id="more" class="secondary" data-i="more" hidden>បង្ហាញបន្ថែម</button></section>
+<section id="budget" class="page" hidden><h2 data-i="budget">ថវិកាប្រចាំខែ</h2><p class="muted" data-i="budgetHelp">កំណត់ថវិកាសម្រាប់ខែ និងរូបិយប័ណ្ណដែលបានជ្រើសខាងលើ។</p><form id="budgetForm" class="card"><label><span data-i="limit">កម្រិតចំណាយ</span><input id="budgetAmount" type="number" min="1" required inputmode="decimal"></label><button class="primary" data-i="save">រក្សាទុក</button></form><p class="muted" data-i="budgetNote">បង្ហាញការជូនដំណឹងនៅក្នុង App ពេលចំណាយដល់ 80% ឬលើសថវិកា។</p></section>
+<section id="settings" class="page" hidden><h2 data-i="settings">ការកំណត់</h2><article class="card"><h3 data-i="language">ភាសា</h3><button id="switchLanguage" class="secondary">ខ្មែរ / English</button></article><article class="card"><h3 data-i="export">នាំចេញទិន្នន័យ</h3><p class="muted" data-i="exportHelp">ទាញយកកំណត់ត្រាទាំងអស់ជា CSV សម្រាប់ Excel។</p><button id="export" class="secondary" data-i="download">ទាញយក CSV</button></article><article class="card"><h3 data-i="privacy">ឯកជនភាព</h3><p class="muted" data-i="privacyHelp">ទិន្នន័យភ្ជាប់នឹង Telegram ID របស់អ្នក។ គណនីសាច់ប្រាក់/ធនាគារគ្រាន់តែជាស្លាក មិនភ្ជាប់ទៅធនាគារទេ។</p><p class="muted" data-i="separate">KHR និង USD ត្រូវបានបង្ហាញដាច់ដោយឡែក ដោយមិនប្ដូរអត្រាប្រាក់។</p></article></section>
+</main>
+<nav aria-label="Main navigation"><button data-page="home" class="active"><span>⌂</span><small data-i="home">ទំព័រដើម</small></button><button data-page="history"><span>↺</span><small data-i="history">ប្រវត្តិ</small></button><button data-page="budget"><span>◎</span><small data-i="budget">ថវិកា</small></button><button data-page="settings"><span>⚙</span><small data-i="settings">ការកំណត់</small></button></nav>
+</div>
+<dialog id="entryDialog"><form id="entryForm"><div class="section-title"><h2 id="entryTitle"></h2><button type="button" id="closeDialog" class="icon-btn" aria-label="Close">✕</button></div><input id="entryId" type="hidden"><div class="field-row"><label><span data-i="amount">ចំនួនប្រាក់</span><input id="amount" type="number" required inputmode="decimal"></label><label><span data-i="currency">រូបិយប័ណ្ណ</span><select id="entryCurrency"><option value="KHR">៛ KHR</option><option value="USD">$ USD</option></select></label></div><label><span data-i="category">ប្រភេទ</span><select id="category"></select></label><div class="field-row"><label><span data-i="account">គណនី</span><select id="account"><option value="cash" data-i="cash">សាច់ប្រាក់</option><option value="bank" data-i="bank">ធនាគារ</option></select></label><label><span data-i="date">ថ្ងៃ</span><input id="day" type="date" min="2000-01-01" required></label></div><label><span data-i="note">កំណត់ចំណាំ (ជាជម្រើស)</span><input id="note" maxlength="300"></label><p id="formError" role="alert"></p><button id="saveEntry" class="primary" data-i="save">រក្សាទុក</button><button type="button" id="deleteEntry" class="danger" data-i="delete" hidden>លុបកំណត់ត្រា</button></form></dialog>
+</body></html>
