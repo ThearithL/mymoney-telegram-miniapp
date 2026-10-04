@@ -342,3 +342,47 @@ def test_menu_close_and_reopen(access_client):
     calls.clear()
     message(client,123,'/menu')
     assert any('keyboard' in body.get('reply_markup',{}) for _,body in calls)
+
+def test_bulk_selected_delete_is_owner_scoped_and_single_use(client):
+    mine=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
+    theirs=client.post('/api/transactions',json=payload(),headers=headers(456)).json['id']
+    endpoint='/api/transactions/delete-preview'
+    assert client.post(endpoint,json={'scope':'all'}).status_code==401
+    assert client.post(endpoint,json={'scope':'selected','ids':[mine,theirs]},headers=headers()).status_code==404
+    preview=client.post(endpoint,json={'scope':'selected','ids':[mine]},headers=headers()).json
+    assert preview['count']==1
+    body={'token':preview['token'],'confirmation':'DELETE'}
+    assert client.post('/api/transactions/delete-confirm',json=body,headers=headers(456)).status_code==409
+    assert client.post('/api/transactions/delete-confirm',json={**body,'confirmation':'yes'},headers=headers()).status_code==400
+    assert client.post('/api/transactions/delete-confirm',json=body,headers=headers()).json['deleted']==1
+    assert client.post('/api/transactions/delete-confirm',json=body,headers=headers()).status_code==409
+    assert len(client.get('/api/data?month=2026-01',headers=headers(456)).json['transactions'])==1
+
+
+def test_bulk_all_snapshot_preserves_later_entries_and_goals(client):
+    a=payload();client.post('/api/transactions',json=a,headers=headers())
+    b={**a,'request_id':'second-request','currency':'KHR','amount':'12000','day':'2025-12-20'}
+    client.post('/api/transactions',json=b,headers=headers())
+    client.post('/api/goals',json={'title':'Laptop','currency':'USD','target':'500','saved':'20','request_id':'goal-new-test'},headers=headers())
+    preview=client.post('/api/transactions/delete-preview',json={'scope':'all'},headers=headers()).json
+    assert preview['count']==2
+    client.post('/api/transactions',json={**a,'request_id':'after-preview'},headers=headers())
+    response=client.post('/api/transactions/delete-confirm',json={'token':preview['token'],'confirmation':'DELETE'},headers=headers())
+    assert response.json['deleted']==2
+    assert len(client.get('/api/data?month=2026-01',headers=headers()).json['transactions'])==1
+    assert len(client.get('/api/goals',headers=headers()).json['goals'])==1
+
+
+def test_bulk_preview_invalidates_previous_and_expires(client,monkeypatch):
+    client.post('/api/transactions',json=payload(),headers=headers())
+    preview=lambda:client.post('/api/transactions/delete-preview',json={'scope':'all'},headers=headers()).json
+    old=preview();new=preview()
+    assert client.post('/api/transactions/delete-confirm',json={'token':old['token'],'confirmation':'DELETE'},headers=headers()).status_code==409
+    now=time.time();monkeypatch.setattr('app.time.time',lambda:now+301)
+    assert client.post('/api/transactions/delete-confirm',json={'token':new['token'],'confirmation':'DELETE'},headers=headers()).status_code==409
+    assert len(client.get('/api/data?month=2026-01',headers=headers()).json['transactions'])==1
+
+
+@pytest.mark.parametrize('body',[{'scope':'other'},{'scope':'selected','ids':[]},{'scope':'selected','ids':[True]},{'scope':'selected','ids':'1'}])
+def test_bulk_preview_rejects_invalid_selection(client,body):
+    assert client.post('/api/transactions/delete-preview',json=body,headers=headers()).status_code==400

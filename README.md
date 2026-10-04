@@ -182,8 +182,18 @@ Savings totals are manual records, not bank transfers and do not change income/e
 
 ## Personal-use update
 
-- Calculator: +, -, ×, ÷ and parentheses, with operation precedence and division-by-zero protection. Use amount fills a draft only; review currency and rounding (whole KHR / two decimal USD) before saving.
+- The calculator has been removed at the owner’s request.
 - My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments, OCR, PDF receipts and recurring payments are not implemented in this package.
 - Owner greeting defaults to Thearith; change ADMIN_DISPLAY_NAME in Render if desired. This changes the Mini App greeting only, not Telegram profile or admin identity. ADMIN_USER_ID is still required.
 - Telegram: Close menu button or /closemenu hides the reply keyboard; /menu or /start opens it again. /id does not force it back open. The separate Telegram MyMoney launcher is unchanged.
 - Upload static/personal.js together with all other files.
+
+## New interface and transaction management
+
+Home now focuses on monthly totals, the current summary and recent activity. Insights contains the daily bar chart and category donut, including percentages, exact amounts, largest category and empty-state support. Donut values follow the selected month/currency and update after edits/deletions. Desktop uses two columns at 900px and above; mobile remains one column. Budget editing is available through the Home budget card’s Manage button.
+
+History supports Add expense/income, tap-to-view, Edit and individual Delete. Select enables checkboxes; Select visible selects only currently rendered rows. Load more reveals additional rows. Filtering discards selections outside the current filter. Delete selected previews the count before confirmation.
+
+Manage my data → Delete all my entries covers all of your transaction history, across months and both currencies. It preserves budgets, goals and access settings. The dialog requires typing DELETE. Deletion is permanent; there is no undo in this version. The server uses an owner-bound, five-minute, single-use snapshot, so later entries are not included. Creating a new preview invalidates the old one. No live user records are deleted during deployment.
+
+Upload the full static folder, including design.js, design.css and history.js. The backend creates the delete_batches table automatically. Keep your existing Neon DATABASE_URL.

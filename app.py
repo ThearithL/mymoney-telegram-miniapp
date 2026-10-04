@@ -16,7 +16,7 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, abort, g, jsonify, request, send_from_directory, Response
 from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInteger,
-                        String, Date, UniqueConstraint, select, insert, update, delete, func)
+                        String, Text, Date, UniqueConstraint, select, insert, update, delete, func)
 from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
 
@@ -65,6 +65,11 @@ budget_alerts = Table('budget_alerts', metadata,
     Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),
     Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),
     Column('level',Integer,nullable=False),UniqueConstraint('user_id','month','currency','level'))
+
+
+delete_batches = Table('delete_batches', metadata,
+    Column('token', String(32), primary_key=True), Column('user_id', BigInteger, nullable=False),
+    Column('ids_json', Text, nullable=False), Column('expires_at', BigInteger, nullable=False))
 
 
 def validate_init_data(raw, token, now=None):
@@ -386,6 +391,54 @@ def create_app(config=None):
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
         return {'start': start.isoformat(), 'end': today.isoformat(), 'totals': [
             {'currency': c, 'kind': k, 'amount': int(a)} for c,k,a in rows]}
+
+    @app.post('/api/transactions/delete-preview')
+    @auth
+    def preview_delete():
+        body = json_body()
+        scope = body.get('scope')
+        query = select(transactions.c.id, transactions.c.request_id).where(transactions.c.user_id == g.user['id'])
+        requested = None
+        if scope == 'selected':
+            requested = body.get('ids')
+            if not isinstance(requested, list) or not 1 <= len(requested) <= 1000 or any(type(i) is not int or i <= 0 for i in requested):
+                abort(400, 'Select 1–1000 valid entries.')
+            requested = set(requested)
+            query = query.where(transactions.c.id.in_(requested))
+        elif scope != 'all':
+            abort(400, 'Invalid deletion scope.')
+        with engine.begin() as conn:
+            snapshot = list(conn.execute(query))
+            ids = [row.id for row in snapshot]
+            if requested is not None and set(ids) != requested:
+                abort(404, 'An entry is unavailable. Refresh your history.')
+            now = int(time.time())
+            conn.execute(delete(delete_batches).where(delete_batches.c.expires_at < now))
+            conn.execute(delete(delete_batches).where(delete_batches.c.user_id == g.user['id']))
+            token = uuid.uuid4().hex if ids else None
+            if ids:
+                conn.execute(insert(delete_batches).values(token=token,user_id=g.user['id'],ids_json=json.dumps([row.request_id for row in snapshot]),expires_at=now+300))
+        return {'token':token,'count':len(ids),'scope':scope}
+
+    @app.post('/api/transactions/delete-confirm')
+    @auth
+    def confirm_delete():
+        body = json_body()
+        token = body.get('token')
+        if body.get('confirmation') != 'DELETE' or not isinstance(token,str) or len(token)!=32:
+            abort(400, 'Type DELETE to confirm.')
+        with engine.begin() as conn:
+            batch = conn.execute(delete(delete_batches).where(delete_batches.c.token==token,
+                delete_batches.c.user_id==g.user['id'],delete_batches.c.expires_at>=int(time.time()))
+                .returning(delete_batches.c.ids_json)).scalar_one_or_none()
+            if batch is None:
+                abort(409, 'Confirmation expired or already used. Refresh your history.')
+            ids = json.loads(batch)
+            count = 0
+            for start in range(0,len(ids),500):
+                count += conn.execute(delete(transactions).where(transactions.c.user_id==g.user['id'],
+                    transactions.c.request_id.in_(ids[start:start+500]))).rowcount
+        return {'deleted':count}
 
     @app.get('/api/goals')
     @auth
