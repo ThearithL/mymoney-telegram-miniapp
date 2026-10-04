@@ -480,3 +480,14 @@ def test_favorite_limit(client):
         assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==201
     favorite={'title':'Thirteenth','kind':'expense','category':'food','amount':'10','currency':'KHR','account':'cash','note':''}
     assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==409
+
+
+def test_fx_display_settings_are_validated_and_private(client):
+    assert client.get('/api/fx',headers=headers()).json=={'base_currency':'KHR','rate_khr_per_usd':4000.0}
+    saved=client.put('/api/fx',json={'base_currency':'USD','rate_khr_per_usd':'4102.5'},headers=headers())
+    assert saved.status_code==200
+    assert saved.json=={'ok':True,'base_currency':'USD','rate_khr_per_usd':4102.5}
+    assert client.get('/api/fx',headers=headers()).json=={'base_currency':'USD','rate_khr_per_usd':4102.5}
+    assert client.get('/api/fx',headers=headers(456)).json=={'base_currency':'KHR','rate_khr_per_usd':4000.0}
+    for currency,rate in [('EUR',4000),('KHR',0),('USD',100001),('USD','NaN'),('USD','4.12345')]:
+        assert client.put('/api/fx',json={'base_currency':currency,'rate_khr_per_usd':rate},headers=headers()).status_code==400

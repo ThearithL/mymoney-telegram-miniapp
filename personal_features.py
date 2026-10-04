@@ -3,7 +3,7 @@ import io,json,time,uuid,warnings
 from datetime import date,datetime
 from zoneinfo import ZoneInfo
 from flask import abort,g,request,Response
-from sqlalchemy import Table,Column,Integer,BigInteger,String,Text,LargeBinary,UniqueConstraint,select,insert,delete,func
+from sqlalchemy import Table,Column,Integer,BigInteger,String,Text,LargeBinary,Numeric,UniqueConstraint,select,insert,delete,func
 from PIL import Image,ImageOps,UnidentifiedImageError
 TZ=ZoneInfo('Asia/Phnom_Penh')
 
@@ -12,6 +12,7 @@ def define_tables(metadata):
       'trash':Table('transaction_trash',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('snapshot',Text,nullable=False),Column('request_id',String(64),nullable=False),Column('deleted_at',BigInteger,nullable=False),UniqueConstraint('user_id','request_id')),
       'photos':Table('receipt_photos',metadata,Column('user_id',BigInteger,primary_key=True),Column('request_id',String(64),primary_key=True),Column('data',LargeBinary,nullable=False)),
       'profiles':Table('personal_profiles',metadata,Column('user_id',BigInteger,primary_key=True),Column('name',String(80),nullable=False),Column('bio',String(160),nullable=False)),
+      'fx':Table('currency_display_settings',metadata,Column('user_id',BigInteger,primary_key=True),Column('base_currency',String(3),nullable=False),Column('rate_khr_per_usd',Numeric(12,4),nullable=False)),
       'favorites':Table('expense_favorites',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('title',String(60),nullable=False),Column('kind',String(10),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('account',String(20),nullable=False),Column('note',String(300),nullable=False)),
       'category_budgets':Table('category_budgets',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),UniqueConstraint('user_id','month','currency','category'))}
 
@@ -21,7 +22,7 @@ def archive_rows(conn,rows,tables):
         conn.execute(insert(tables['trash']).values(user_id=data['user_id'],snapshot=json.dumps(data),request_id=data['request_id'],deleted_at=int(time.time())))
 
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
-    trash,photos,profiles,limits,favorites=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites'])
+    trash,photos,profiles,limits,favorites,fx=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx'])
     def upsert(table):
         if engine.dialect.name=='postgresql':
             from sqlalchemy.dialects.postgresql import insert as dialect_insert
@@ -119,6 +120,26 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         with engine.begin() as conn:
             row=owned_entry(conn,identity);conn.execute(delete(photos).where(photos.c.user_id==g.user['id'],photos.c.request_id==row['request_id']))
         return {'ok':True}
+
+    @app.get('/api/fx')
+    @auth
+    def fx_get():
+        with engine.connect() as conn:row=conn.execute(select(fx).where(fx.c.user_id==g.user['id'])).mappings().first()
+        return {'base_currency':row['base_currency'] if row else 'KHR','rate_khr_per_usd':float(row['rate_khr_per_usd']) if row else 4000.0}
+
+    @app.put('/api/fx')
+    @auth
+    def fx_put():
+        from decimal import Decimal,DecimalException
+        body=json_body();currency=body.get('base_currency');raw=body.get('rate_khr_per_usd')
+        if currency not in ('KHR','USD'):abort(400,'Display currency must be KHR or USD.')
+        try:
+            rate=Decimal(str(raw))
+            if not rate.is_finite() or not Decimal('1')<=rate<=Decimal('100000') or rate.as_tuple().exponent < -4:raise ValueError()
+        except (DecimalException,TypeError,ValueError):abort(400,'Enter a positive rate up to 4 decimal places.')
+        values={'user_id':g.user['id'],'base_currency':currency,'rate_khr_per_usd':rate}
+        with engine.begin() as conn:conn.execute(upsert(fx).values(**values).on_conflict_do_update(index_elements=['user_id'],set_={'base_currency':currency,'rate_khr_per_usd':rate}))
+        return {'ok':True,'base_currency':currency,'rate_khr_per_usd':float(rate)}
 
     @app.get('/api/favorites')
     @auth

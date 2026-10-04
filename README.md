@@ -18,12 +18,12 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Add income/expenses, category, cash/bank label, date and optional note.
 - Edit, confirmed delete, month/currency filters, history search and pagination.
 - Monthly income minus expenses, category bars, monthly budgets, in-app budget warnings.
-- KHR stored as integer riel; USD stored as integer cents. Totals stay separate.
+- KHR is stored as whole riel and USD as cents. The dashboard, history, charts, summaries and comparison combine both currencies using your saved display rate; each entry remains stored in its original currency. The default display rate is 4,000 KHR/USD and can be edited in Settings.
 - CSV export of your own full history, with spreadsheet formula escaping.
 - Server-side Telegram initData signature/age verification, user allowlist, per-user data isolation.
 - Duplicate create retries reuse a request ID; SQLAlchemy supports SQLite and PostgreSQL.
 
-**Scope:** This version implements the core tracker. Scheduled reminders, OCR, voice recognition, bank integration, account transfers and exchange-rate conversion are not included. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
+**Scope:** This version implements the core tracker. Scheduled reminders, OCR, voice recognition, bank integration and account transfers are not included. The exchange rate is manually editable and used for display totals only; it is not a live market quote. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
 
 ## 1. Create your Telegram bot
 
