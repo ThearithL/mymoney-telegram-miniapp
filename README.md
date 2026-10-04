@@ -1,10 +1,15 @@
-# លុយខ្ញុំ · MyMoney Telegram Mini App — Admin approval update
+# លុយខ្ញុំ · MyMoney Telegram Mini App — Dashboard, goals and admin update
 
 A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bot webhook + responsive vanilla HTML/CSS/JavaScript. No frontend build step. Start with `RENDER_SETUP_KH.md` for the simplest Render + Neon deployment and owner bootstrap.
 
 ## Included
 
-- Telegram menu and inline button to open the Mini App.
+- Telegram persistent menu, quick expense/income buttons and inline Mini App launch.
+- Daily expense chart with data table; today/week/month summaries in app and bot.
+- Savings goals with manually entered saved totals, progress and edit/delete.
+- Light/dark/system themes, quick-entry drafts, loading animations and retry messages.
+- Budget alerts at 80% and 100% in app and Telegram.
+- Owner /admin dashboard: users, access controls, records, goals, totals and audit history.
 - Request access button, admin Approve/Reject buttons, persistent access decisions in Neon.
 - `/id` works before approval; `/request` submits access; `/requests` recovers pending requests for the owner.
 - `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
@@ -18,7 +23,7 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Server-side Telegram initData signature/age verification, user allowlist, per-user data isolation.
 - Duplicate create retries reuse a request ID; SQLAlchemy supports SQLite and PostgreSQL.
 
-**Scope:** This version implements the core tracker. Savings goals, scheduled reminders, OCR, voice recognition, bank integration, account transfers and exchange-rate conversion are not included. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
+**Scope:** This version implements the core tracker. Scheduled reminders, OCR, voice recognition, bank integration, account transfers and exchange-rate conversion are not included. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
 
 ## 1. Create your Telegram bot
 
@@ -163,6 +168,14 @@ New users send /start and tap Request access, or send /request. The bot displays
 
 Only ADMIN_USER_ID may approve or reject. Callback decisions apply only to pending requests; repeated/stale clicks cannot reverse them. Notifications for the same pending user are throttled to one per minute. If Telegram delivery fails, requests remain saved and the admin can use /requests to retrieve batches of five. Decisions remain saved even if a user blocks the notification; the user can reopen the app to check.
 
-Rejected users cannot automatically reapply in this release. The owner may deliberately add their ID to ALLOWED_USER_IDS to override the rejection. This release does not add a revocation UI. Admin access does not grant access to other users' expense history.
+Rejected users cannot automatically reapply. The owner can grant or revoke access through /admin with confirmation. Saved decisions override ALLOWED_USER_IDS. Revoking access preserves records. The owner can review users' transactions, budgets and savings goals through the Telegram admin panel; the Mini App API remains scoped to the signed-in user. Users are informed of owner visibility. Admin financial editing/deletion and bulk broadcasts are not implemented.
 
 When upgrading an existing deployment, re-register the webhook with allowed_updates including BOTH message and callback_query. The new setup script/Start Command handles this. A setWebhook success does not by itself prove delivery; inspect getWebhookInfo and service logs if /id does not respond.
+
+## Upgrade and warning behavior
+
+Upload ALL project files, including admin_panel.py and static/index.html, style.css and app.js. Do not replace only app.js. Keep your existing Neon DATABASE_URL. New tables are created automatically; existing financial records are retained.
+
+Telegram budget warnings run when saving an expense or monthly budget, for the current month in Asia/Phnom_Penh. One alert per threshold (80%, 100%), currency and month; changing the budget does not reset sent alerts. There is no background reminder scheduler. Failed notification delivery does not roll back the saved transaction.
+
+Savings totals are manual records, not bank transfers and do not change income/expenses. The owner must set their own numeric ADMIN_USER_ID in Render; no admin identity is hardcoded.
