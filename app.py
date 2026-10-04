@@ -185,6 +185,7 @@ def create_app(config=None):
 
     def menu_keyboard(uid):
         rows = [[{'text': '💰 MyMoney'}, {'text': '📊 សង្ខេប / Summary'}],
+                [{'text': '💸 ថ្ងៃនេះអាចចាយ / Daily allowance'}],
                 [{'text': '➕ ចំណាយ / Expense'}, {'text': '💵 ចំណូល / Income'}],
                 [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
         if uid == admin and admin:
@@ -201,6 +202,33 @@ def create_app(config=None):
 
     def personal_summary(uid, period):
         today = datetime.now(TZ).date()
+        if period == 'allowance':
+            month = today.strftime('%Y-%m')
+            month_start = today.replace(day=1)
+            next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
+            days_left = (next_month - today).days
+            with engine.connect() as conn:
+                limits = conn.execute(select(budgets.c.currency, budgets.c.amount).where(
+                    budgets.c.user_id == uid, budgets.c.month == month)).all()
+                expenses = conn.execute(select(transactions.c.currency, func.sum(transactions.c.amount)).where(
+                    transactions.c.user_id == uid, transactions.c.kind == 'expense',
+                    transactions.c.day >= month_start, transactions.c.day < next_month
+                ).group_by(transactions.c.currency)).all()
+            text = f'💸 ថ្ងៃនេះអាចចាយបាន / Spendable today\n{month} · {days_left} ថ្ងៃនៅសល់ រាប់ទាំងថ្ងៃនេះ / days left including today\n'
+            if not limits:
+                text += '\nមិនទាន់កំណត់ថវិកាខែនេះទេ។ បើក MyMoney ដើម្បីកំណត់ថវិកា។\nSet a monthly budget in MyMoney first.'
+            else:
+                for currency in ('KHR', 'USD'):
+                    limit = next((amount for cur, amount in limits if cur == currency), None)
+                    if limit is None:
+                        continue
+                    spent = next((amount or 0 for cur, amount in expenses if cur == currency), 0)
+                    remaining = max(0, limit - spent)
+                    daily = remaining // days_left
+                    text += f'\n{currency}\nនៅសល់ / Left: {display_money(remaining,currency)}\nថ្ងៃនេះអាចចាយ / Daily amount: {display_money(daily,currency)}'
+                    if remaining == 0:
+                        text += '\nបានប្រើថវិកាខែនេះអស់ហើយ / Monthly budget used.'
+            return {'text': text, 'reply_markup': open_buttons()}
         start = today if period == 'today' else today - timedelta(days=today.weekday()) if period == 'week' else today.replace(day=1)
         with engine.connect() as conn:
             totals = conn.execute(select(transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
@@ -215,6 +243,7 @@ def create_app(config=None):
             {'text': 'ថ្ងៃនេះ / Today', 'callback_data': 'summary:today'},
             {'text': 'សប្ដាហ៍ / Week', 'callback_data': 'summary:week'},
             {'text': 'ខែ / Month', 'callback_data': 'summary:month'}],
+            [{'text': '💸 ថ្ងៃនេះអាចចាយ / Spendable today', 'callback_data': 'summary:allowance'}],
             [{'text': '📈 ក្រាហ្វ / Charts', 'web_app': {'url': app.config['APP_URL']}}]]}}
 
     def budget_warning(uid, month, currency):
@@ -627,7 +656,7 @@ def create_app(config=None):
             if action.startswith('summary:'):
                 telegram('answerCallbackQuery', {'callback_query_id': callback_id})
                 period = action.split(':', 1)[1]
-                payload = personal_summary(uid, period) if has_access(uid) and period in ('today','week','month') else {'text': '🔒 Send /request to request access.'}
+                payload = personal_summary(uid, period) if has_access(uid) and period in ('today','week','month','allowance') else {'text': '🔒 Send /request to request access.'}
                 telegram('sendMessage', {'chat_id': uid, **payload})
                 return {'ok': True}
             if action.startswith('admin:'):
@@ -678,6 +707,7 @@ def create_app(config=None):
         remember_user(user)
         raw = message.get('text', '').strip()
         aliases = {'💰 MyMoney':'/open','📊 សង្ខេប / Summary':'/summary',
+            '💸 ថ្ងៃនេះអាចចាយ / Daily allowance':'/allowance',
             '➕ ចំណាយ / Expense':'/expense','💵 ចំណូល / Income':'/income',
             '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
             '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
@@ -690,7 +720,7 @@ def create_app(config=None):
         elif command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
         elif command in ('/help', '/privacy'):
-            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\nExpense / Income — open entry form\n\n' + privacy
+            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\n/allowance — ថ្ងៃនេះអាចចាយបានប៉ុន្មាន? / Spendable today\nExpense / Income — open entry form\n\n' + privacy
         elif command == '/request':
             payload['text'] = request_access(user)
         elif command == '/admin':
@@ -722,6 +752,8 @@ def create_app(config=None):
             payload['reply_markup'] = {'inline_keyboard': [[{'text':'🔓 Request access','callback_data':'request_access'}]]}
         elif command == '/summary':
             payload.update(personal_summary(uid, 'month'))
+        elif command == '/allowance':
+            payload.update(personal_summary(uid, 'allowance'))
         elif command in ('/open','/expense','/income'):
             payload['text'] = '💰 ចុចបើក / Tap to open'
             payload['reply_markup'] = open_buttons(command[1:] if command != '/open' else '')

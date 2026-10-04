@@ -299,6 +299,27 @@ def test_budget_alerts_once_per_threshold_and_no_other_user_leak(access_client):
     client.post('/api/transactions',headers=headers(),json=data)
     assert len(calls)==2
 
+def test_telegram_daily_allowance_uses_budget_remaining(access_client):
+    from app import datetime, TZ, display_money
+    client,calls,_=access_client
+    today=datetime.now(TZ).date()
+    month=today.strftime('%Y-%m')
+    client.put('/api/budget',headers=headers(),json={'month':month,'currency':'USD','amount':'100'})
+    data=payload();data.update(day=today.isoformat(),amount='20')
+    assert client.post('/api/transactions',headers=headers(),json=data).status_code==201
+
+    response=message(client,123,'/allowance')
+    assert response.status_code==200
+    text=calls[-1][1]['text']
+    days_left=(today.replace(day=28)+__import__('datetime').timedelta(days=4)).replace(day=1)
+    remaining_days=(days_left-today).days
+    assert 'Spendable today' in text
+    assert f'Left: {display_money(8000,"USD")}' in text
+    assert f'Daily amount: {display_money(8000//remaining_days,"USD")}' in text
+    assert message(client,123,'/start').status_code==200
+    keyboard=calls[-2][1]['reply_markup']['keyboard']
+    assert any(row[0]['text']=='💸 ថ្ងៃនេះអាចចាយ / Daily allowance' for row in keyboard)
+
 def test_budget_delivery_failure_keeps_transaction_and_retries(access_client,monkeypatch):
     from app import datetime, TZ
     import requests

@@ -6,6 +6,9 @@ const km = {month:'ខែ',net:'ចំណូល − ចំណាយក្នុ�
 Object.assign(en, {
   quickSummary:'Current summary', today:'Today', thisWeek:'This week', thisMonth:'This month', refresh:'Refresh',
   netShort:'Net', dailyTrend:'Daily spending', trendHelp:'For the selected month above. Tap a bar to see its amount.',
+  dailyAllowance:'How much can I spend today?', dailyAllowanceHelp:'Average daily amount from your remaining monthly budget, counting today.',
+  dailyAllowanceNoBudget:'Set a monthly budget to calculate your daily amount.', dailyAllowanceReached:'Your monthly budget is used up. Daily amount: 0.',
+  daysIncludingToday:'days left, including today', monthlyLeft:'Monthly budget left',
   dailyAverage:'Average / day', highestDay:'Highest spending day', viewDailyData:'View daily data table',
   adminHelp:'Open your bot chat and tap Admin or send /admin to manage users and review data.',
   privacyHelp:'Other users cannot access your records. The owner/admin can review recorded transactions and budgets. Cash/bank are labels; no bank connection.'
@@ -13,6 +16,9 @@ Object.assign(en, {
 Object.assign(km, {
   quickSummary:'សង្ខេបបច្ចុប្បន្ន', today:'ថ្ងៃនេះ', thisWeek:'សប្ដាហ៍នេះ', thisMonth:'ខែនេះ', refresh:'ធ្វើបច្ចុប្បន្នភាព',
   netShort:'នៅសល់សុទ្ធ', dailyTrend:'ចំណាយប្រចាំថ្ងៃ', trendHelp:'សម្រាប់ខែដែលបានជ្រើសខាងលើ។ ចុចលើជួរដើម្បីមើលចំនួនប្រាក់។',
+  dailyAllowance:'ថ្ងៃនេះអាចចាយបានប៉ុន្មាន?', dailyAllowanceHelp:'ប្រាក់ថវិកានៅសល់ចែកតាមថ្ងៃដែលនៅសល់ ដោយរាប់បញ្ចូលថ្ងៃនេះ។',
+  dailyAllowanceNoBudget:'កំណត់ថវិកាប្រចាំខែជាមុន ដើម្បីគណនាចំនួនចាយប្រចាំថ្ងៃ។', dailyAllowanceReached:'បានប្រើថវិកាអស់ហើយ។ ថ្ងៃនេះអាចចាយបាន៖ 0។',
+  daysIncludingToday:'ថ្ងៃនៅសល់ រាប់ទាំងថ្ងៃនេះ', monthlyLeft:'ថវិកានៅសល់ក្នុងខែ',
   dailyAverage:'មធ្យម/ថ្ងៃ', highestDay:'ថ្ងៃចាយច្រើនបំផុត', viewDailyData:'មើលតារាងប្រចាំថ្ងៃ',
   adminHelp:'បើក Chat របស់ Bot ហើយចុច Admin ឬផ្ញើ /admin ដើម្បីគ្រប់គ្រងអ្នកប្រើ និងមើលទិន្នន័យ។',
   privacyHelp:'អ្នកប្រើផ្សេងមិនអាចមើលទិន្នន័យអ្នកបានទេ។ ម្ចាស់ Bot/Admin អាចមើលកំណត់ត្រាចំណូល ចំណាយ និងថវិកា។ App មិនភ្ជាប់ធនាគារទេ។'
@@ -58,7 +64,22 @@ async function load(){
 function showPage(page){document.querySelectorAll('.page').forEach(n=>n.hidden=n.id!==page);document.querySelectorAll('[data-page]').forEach(n=>n.classList.toggle('active',n.dataset.page===page));window.scrollTo({top:0,behavior:'smooth'});if(tg?.initData){if(page==='home')tg.BackButton.hide();else tg.BackButton.show();}}
 function rows(target,items){const root=$(target);root.replaceChildren();if(!items.length){root.append(node('div',t('empty'),'empty'));return;}for(const r of items){const button=node('button',undefined,'row');button.type='button';const copy=node('span',undefined,'row-copy');copy.append(node('b',r.note||t(r.category)),node('small',r.day+' · '+t(r.account)));button.append(node('span',icons[r.category],'row-icon'),copy,node('span',(r.kind==='expense'?'−':'+')+money(r.amount,r.currency),'row-money '+(r.kind==='expense'?'negative':'positive')));button.addEventListener('click',()=>openEntry(r.kind,r));root.append(button);}}
 function renderHistory(){const query=$('search').value.toLowerCase();const items=state.transactions.filter(r=>r.currency===$('currency').value&&(filter==='all'||r.kind===filter)&&[r.note,t(r.category),r.day,t(r.account)].join(' ').toLowerCase().includes(query));rows('historyList',items.slice(0,pageSize));$('more').hidden=items.length<=pageSize;}
-function render(){const currency=$('currency').value;const items=state.transactions.filter(r=>r.currency===currency);const expense=items.filter(r=>r.kind==='expense').reduce((n,r)=>n+r.amount,0);const income=items.filter(r=>r.kind==='income').reduce((n,r)=>n+r.amount,0);$('net').textContent=money(income-expense);$('income').textContent=money(income);$('expense').textContent=money(expense);const budget=state.budgets.find(b=>b.currency===currency);$('budgetAmount').value=budget?budget.amount/(currency==='USD'?100:1):'';$('budgetAmount').step=currency==='USD'?'0.01':'1';$('budgetAmount').min=$('budgetAmount').step;$('budgetSummary').textContent=budget?money(expense)+' / '+money(budget.amount):t('noBudget');$('budgetProgress').value=budget?Math.min(100,expense/budget.amount*100):0;$('budgetHint').classList.toggle('budget-warning',!!budget&&expense>=budget.amount*.8);$('budgetHint').setAttribute('role','status');$('budgetHint').textContent=budget?(expense>budget.amount?t('over')+': '+money(expense-budget.amount):t('remaining')+': '+money(budget.amount-expense))+(expense>=budget.amount*.8?' · '+t('warning'):''):'';const chart=$('chart');chart.replaceChildren();const grouped={};items.filter(r=>r.kind==='expense').forEach(r=>grouped[r.category]=(grouped[r.category]||0)+r.amount);if(!expense)chart.append(node('p',t('empty'),'muted'));Object.entries(grouped).sort((a,b)=>b[1]-a[1]).forEach(([category,amount])=>{const label=node('div',undefined,'bar-label');label.append(node('span',t(category)),node('b',money(amount)));const bar=node('progress');bar.max=expense;bar.value=amount;bar.setAttribute('aria-label',t(category));chart.append(label,bar);});rows('recent',items.slice(0,4));renderHistory();renderTrend(items);renderSummary();$('adminHint').hidden=!state.user?.is_admin;$('greetingName').textContent=state.user?t('welcome')+', '+state.user.name:'MyMoney';}
+function renderDailyAllowance(currency, expense, budget){
+  const card=$('dailyAllowanceCard');
+  const todayDate=state.today||'';
+  if(!todayDate||$('month').value!==todayDate.slice(0,7)){card.hidden=true;return;}
+  card.hidden=false;
+  const [year,month,day]=todayDate.split('-').map(Number);
+  const daysLeft=new Date(Date.UTC(year,month,0)).getUTCDate()-day+1;
+  $('dailyAllowanceDays').textContent=`${daysLeft} ${t('daysIncludingToday')}`;
+  if(!budget){$('dailyAllowanceAmount').textContent='—';$('dailyAllowanceHint').textContent=t('dailyAllowanceNoBudget');return;}
+  const remaining=Math.max(0,budget.amount-expense);
+  $('dailyAllowanceAmount').textContent=money(Math.floor(remaining/daysLeft),currency);
+  $('dailyAllowanceHint').textContent=remaining>0
+    ?`${t('monthlyLeft')}: ${money(remaining,currency)} ÷ ${daysLeft} ${t('daysIncludingToday')}`
+    :t('dailyAllowanceReached');
+}
+function render(){const currency=$('currency').value;const items=state.transactions.filter(r=>r.currency===currency);const expense=items.filter(r=>r.kind==='expense').reduce((n,r)=>n+r.amount,0);const income=items.filter(r=>r.kind==='income').reduce((n,r)=>n+r.amount,0);$('net').textContent=money(income-expense);$('income').textContent=money(income);$('expense').textContent=money(expense);const budget=state.budgets.find(b=>b.currency===currency);renderDailyAllowance(currency,expense,budget);$('budgetAmount').value=budget?budget.amount/(currency==='USD'?100:1):'';$('budgetAmount').step=currency==='USD'?'0.01':'1';$('budgetAmount').min=$('budgetAmount').step;$('budgetSummary').textContent=budget?money(expense)+' / '+money(budget.amount):t('noBudget');$('budgetProgress').value=budget?Math.min(100,expense/budget.amount*100):0;$('budgetHint').classList.toggle('budget-warning',!!budget&&expense>=budget.amount*.8);$('budgetHint').setAttribute('role','status');$('budgetHint').textContent=budget?(expense>budget.amount?t('over')+': '+money(expense-budget.amount):t('remaining')+': '+money(budget.amount-expense))+(expense>=budget.amount*.8?' · '+t('warning'):''):'';const chart=$('chart');chart.replaceChildren();const grouped={};items.filter(r=>r.kind==='expense').forEach(r=>grouped[r.category]=(grouped[r.category]||0)+r.amount);if(!expense)chart.append(node('p',t('empty'),'muted'));Object.entries(grouped).sort((a,b)=>b[1]-a[1]).forEach(([category,amount])=>{const label=node('div',undefined,'bar-label');label.append(node('span',t(category)),node('b',money(amount)));const bar=node('progress');bar.max=expense;bar.value=amount;bar.setAttribute('aria-label',t(category));chart.append(label,bar);});rows('recent',items.slice(0,4));renderHistory();renderTrend(items);renderSummary();$('adminHint').hidden=!state.user?.is_admin;$('greetingName').textContent=state.user?t('welcome')+', '+state.user.name:'MyMoney';}
 function svgNode(tag, attributes={}) {
   const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
   Object.entries(attributes).forEach(([key,value]) => element.setAttribute(key,String(value)));

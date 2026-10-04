@@ -90,7 +90,7 @@ On your computer, set `.env` to the same `BOT_TOKEN`, `APP_URL` and `WEBHOOK_SEC
 
 Linux/macOS: `.venv/bin/python setup_bot.py`.
 
-The script registers the webhook, chat menu button and `/start`, `/menu`, `/id` commands. It replaces any existing webhook for this bot; use a dedicated bot, and do not run a polling bot with the same token.
+The script registers the webhook, chat menu button and bot commands including `/start`, `/menu`, `/id`, `/summary` and `/allowance`. It replaces any existing webhook for this bot; use a dedicated bot, and do not run a polling bot with the same token.
 
 **If you don't know your Telegram ID:** deploy initially with an empty `ALLOWED_USER_IDS`, run `setup_bot.py`, then send `/id` in your bot's private chat. Copy that numeric ID into Render's `ALLOWED_USER_IDS` environment variable and redeploy. The `/id` command works before access is allowed. For approval management, put your personal ID in ADMIN_USER_ID, not only in ALLOWED_USER_IDS.
 
@@ -186,6 +186,7 @@ Savings totals are manual records, not bank transfers and do not change income/e
 - My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments are supported; OCR, PDF receipt export and recurring payments are not implemented.
 - Owner greeting defaults to Thearith; change ADMIN_DISPLAY_NAME in Render if desired. This changes the Mini App greeting only, not Telegram profile or admin identity. ADMIN_USER_ID is still required.
 - Telegram: Close menu button or /closemenu hides the reply keyboard; /menu or /start opens it again. /id does not force it back open. The separate Telegram MyMoney launcher is unchanged.
+- Daily allowance: the Home page divides the selected currency's current-month budget remaining by the days left, including today. Telegram `/allowance` shows the same calculation for each currency with a budget. Set a monthly budget first.
 - Upload static/personal.js together with all other files.
 
 ## New interface and transaction management
