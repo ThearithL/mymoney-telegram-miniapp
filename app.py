@@ -183,6 +183,7 @@ def create_app(config=None):
             rows.append([{'text': '🛡 Admin'}, {'text': '⏳ Requests'}])
         elif not has_access(uid):
             rows.insert(0, [{'text': '🔓 Request access'}])
+        rows.append([{'text': '✕ បិទ Menu / Close menu'}])
         return {'keyboard': rows, 'resize_keyboard': True, 'is_persistent': True}
 
     def open_buttons(action=''):
@@ -368,7 +369,7 @@ def create_app(config=None):
             rows = conn.execute(select(transactions).where(transactions.c.user_id == g.user['id'],
                 transactions.c.day >= start, transactions.c.day < end).order_by(transactions.c.day.desc(), transactions.c.id.desc())).mappings().all()
             limits = conn.execute(select(budgets).where(budgets.c.user_id == g.user['id'], budgets.c.month == month)).mappings().all()
-        return jsonify(user={'name': g.user.get('first_name', 'Friend'), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
+        return jsonify(user={'name': (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
                        transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits])
 
     @app.get('/api/summary')
@@ -605,11 +606,14 @@ def create_app(config=None):
         aliases = {'💰 MyMoney':'/open','📊 សង្ខេប / Summary':'/summary',
             '➕ ចំណាយ / Expense':'/expense','💵 ចំណូល / Income':'/income',
             '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
-            '🔓 Request access':'/request'}
+            '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
         command = aliases.get(raw, raw.split(' ')[0].split('@')[0])
-        payload = {'chat_id': chat['id'], 'reply_markup': menu_keyboard(uid)}
+        payload = {'chat_id': chat['id']}
         privacy = 'ឯកជនភាព៖ Admin អាចមើលទិន្នន័យហិរញ្ញវត្ថុក្នុង Bot នេះ។ / Privacy: the owner/admin can review your recorded transactions and budgets.'
-        if command == '/id':
+        if command == '/closemenu':
+            payload['text'] = 'បានបិទ Menu។ ផ្ញើ /menu ដើម្បីបើកវិញ។ / Menu closed. Send /menu to reopen.'
+            payload['reply_markup'] = {'remove_keyboard': True}
+        elif command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
         elif command in ('/help', '/privacy'):
             payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\nExpense / Income — open entry form\n\n' + privacy
@@ -627,6 +631,7 @@ def create_app(config=None):
                 delivered = sum(bool(notify_admin(row)) for row in pending)
                 payload['text'] = f'Pending requests sent: {delivered}/{len(pending)}. Approve/reject these, then send /requests for the next batch.' if pending else '✅ No pending requests.'
         elif command in ('/start', '/menu'):
+            payload['reply_markup'] = menu_keyboard(uid)
             payload['text'] = f'💰 លុយខ្ញុំ / MyMoney\nTelegram ID: {uid}\nជ្រើសប៊ូតុងខាងក្រោម / Choose a button below.\n\n' + privacy
             if not has_access(uid):
                 payload['text'] += '\n🔒 ចុច Request access ដើម្បីស្នើសុំសិទ្ធិ។'

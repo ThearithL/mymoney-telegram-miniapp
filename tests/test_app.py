@@ -328,3 +328,17 @@ def test_summary_week_crosses_month_and_filters_users(client,monkeypatch):
     assert week['start']=='2026-09-28' and week['totals'][0]['amount']==3000
     month=client.get('/api/summary?period=month',headers=headers()).json
     assert month['totals'][0]['amount']==2000
+
+def test_menu_close_and_reopen(access_client):
+    client,calls,_=access_client
+    assert message(client,123,'/menu').status_code==200
+    assert any('keyboard' in body.get('reply_markup',{}) for _,body in calls)
+    calls.clear()
+    assert message(client,123,'✕ បិទ Menu / Close menu').status_code==200
+    assert calls[-1][1]['reply_markup']=={'remove_keyboard':True}
+    calls.clear()
+    message(client,123,'/id')
+    assert 'reply_markup' not in calls[-1][1]
+    calls.clear()
+    message(client,123,'/menu')
+    assert any('keyboard' in body.get('reply_markup',{}) for _,body in calls)

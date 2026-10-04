@@ -179,3 +179,11 @@ Upload ALL project files, including admin_panel.py and static/index.html, style.
 Telegram budget warnings run when saving an expense or monthly budget, for the current month in Asia/Phnom_Penh. One alert per threshold (80%, 100%), currency and month; changing the budget does not reset sent alerts. There is no background reminder scheduler. Failed notification delivery does not roll back the saved transaction.
 
 Savings totals are manual records, not bank transfers and do not change income/expenses. The owner must set their own numeric ADMIN_USER_ID in Render; no admin identity is hardcoded.
+
+## Personal-use update
+
+- Calculator: +, -, ×, ÷ and parentheses, with operation precedence and division-by-zero protection. Use amount fills a draft only; review currency and rounding (whole KHR / two decimal USD) before saving.
+- My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments, OCR, PDF receipts and recurring payments are not implemented in this package.
+- Owner greeting defaults to Thearith; change ADMIN_DISPLAY_NAME in Render if desired. This changes the Mini App greeting only, not Telegram profile or admin identity. ADMIN_USER_ID is still required.
+- Telegram: Close menu button or /closemenu hides the reply keyboard; /menu or /start opens it again. /id does not force it back open. The separate Telegram MyMoney launcher is unchanged.
+- Upload static/personal.js together with all other files.

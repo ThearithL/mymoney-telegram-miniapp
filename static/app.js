@@ -215,7 +215,9 @@ if (tg?.initData) {
   }
 
   tg.BackButton.onClick(() => {
-    if ($('goalDialog').open) $('goalDialog').close();
+    if ($('calculatorDialog')?.open) $('calculatorDialog').close();
+    else if ($('receiptDialog')?.open) $('receiptDialog').close();
+    else if ($('goalDialog').open) $('goalDialog').close();
     else if ($('entryDialog').open) $('entryDialog').close();
     else showPage('home');
   });
