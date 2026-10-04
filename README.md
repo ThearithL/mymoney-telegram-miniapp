@@ -183,7 +183,7 @@ Savings totals are manual records, not bank transfers and do not change income/e
 ## Personal-use update
 
 - The calculator has been removed at the owner’s request.
-- My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments, OCR, PDF receipts and recurring payments are not implemented in this package.
+- My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments are supported; OCR, PDF receipt export and recurring payments are not implemented.
 - Owner greeting defaults to Thearith; change ADMIN_DISPLAY_NAME in Render if desired. This changes the Mini App greeting only, not Telegram profile or admin identity. ADMIN_USER_ID is still required.
 - Telegram: Close menu button or /closemenu hides the reply keyboard; /menu or /start opens it again. /id does not force it back open. The separate Telegram MyMoney launcher is unchanged.
 - Upload static/personal.js together with all other files.
@@ -194,6 +194,16 @@ Home now focuses on monthly totals, the current summary and recent activity. Ins
 
 History supports Add expense/income, tap-to-view, Edit and individual Delete. Select enables checkboxes; Select visible selects only currently rendered rows. Load more reveals additional rows. Filtering discards selections outside the current filter. Delete selected previews the count before confirmation.
 
-Manage my data → Delete all my entries covers all of your transaction history, across months and both currencies. It preserves budgets, goals and access settings. The dialog requires typing DELETE. Deletion is permanent; there is no undo in this version. The server uses an owner-bound, five-minute, single-use snapshot, so later entries are not included. Creating a new preview invalidates the old one. No live user records are deleted during deployment.
+Manage my data → Delete all my entries covers all of your transaction history, across months and both currencies. It preserves budgets, goals and access settings. The dialog requires typing DELETE. Deletion moves records to Trash. Restore from Settings → Trash; only Delete forever inside Trash is permanent. The server uses an owner-bound, five-minute, single-use snapshot, so later entries are not included. Creating a new preview invalidates the old one. No live user records are deleted during deployment.
 
 Upload the full static folder, including design.js, design.css and history.js. The backend creates the delete_batches table automatically. Keep your existing Neon DATABASE_URL.
+
+## Profile, receipt photos, trash and category budgets
+
+- Settings → My profile: save a display name (1–80 characters) and optional bio (160 characters). Saved per Telegram user in Neon; changes the App greeting, not Telegram identity/admin rights.
+- All individual and bulk transaction deletions now move records into Trash. Settings → Trash lists 100 records at a time with Load more. Restore keeps the original amount/date/category and receipt photo; active totals and charts include it again. Delete forever requires confirmation and removes the photo. Trash has no automatic expiration. Budgets/goals retain their existing behavior.
+- Open an expense record to attach one receipt photo. JPEG/PNG/WebP, maximum input 2 MB / 20 megapixels; animated images are rejected. Server normalizes to JPEG, removes metadata and resizes to at most 1600×1600. Photos are stored as database bytes in Neon, not ephemeral Render disk. They consume database storage. Only the signed-in owner can fetch/upload/remove through the photo API. Upload after saving the expense.
+- Home → monthly budget → Manage also contains Category budgets. Limits are keyed by user/month/currency/category; set again to edit, Remove limit to delete. Progress and 80%/100% warnings are in-app. Existing Telegram alerts still concern the overall monthly budget.
+- Insights → Month comparison shows expense totals for the selected and previous calendar months, difference and percent change. Current-month comparisons are marked incomplete; a zero previous-month baseline shows no percentage.
+- Added subtle card, modal, chart and button animations. Device Reduce Motion disables animations.
+- Update all files, including personal_features.py and static/features.js, and reinstall requirements (Pillow is new). New tables are additive; no existing financial records are deleted by deployment.

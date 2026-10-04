@@ -386,3 +386,74 @@ def test_bulk_preview_invalidates_previous_and_expires(client,monkeypatch):
 @pytest.mark.parametrize('body',[{'scope':'other'},{'scope':'selected','ids':[]},{'scope':'selected','ids':[True]},{'scope':'selected','ids':'1'}])
 def test_bulk_preview_rejects_invalid_selection(client,body):
     assert client.post('/api/transactions/delete-preview',json=body,headers=headers()).status_code==400
+
+def test_trash_restore_photo_and_permanent_delete(client):
+    import io
+    from PIL import Image
+    photo=io.BytesIO();Image.new('RGB',(32,32),'green').save(photo,format='PNG')
+    identity=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
+    url=f'/api/transactions/{identity}/photo'
+    assert client.put(url,data=photo.getvalue(),content_type='image/png',headers=headers(456)).status_code==404
+    assert client.put(url,data=b'not an image',content_type='image/png',headers=headers()).status_code==400
+    assert client.put(url,data=photo.getvalue(),content_type='image/png',headers=headers()).status_code==200
+    response=client.get(url,headers=headers());assert response.mimetype=='image/jpeg'
+    assert response.headers['Cache-Control']=='no-store'
+    assert client.get(url,headers=headers(456)).status_code==404
+    assert client.delete(f'/api/transactions/{identity}',headers=headers()).status_code==200
+    trashed=client.get('/api/trash',headers=headers()).json['entries'][0]
+    assert not client.get('/api/trash',headers=headers(456)).json['entries']
+    assert client.post('/api/transactions',json=payload(),headers=headers()).status_code==409
+    assert client.post(f"/api/trash/{trashed['id']}/restore",headers=headers(456)).status_code==404
+    restored=client.post(f"/api/trash/{trashed['id']}/restore",headers=headers()).json['id']
+    assert client.get(f'/api/transactions/{restored}/photo',headers=headers()).status_code==200
+    assert client.post(f"/api/trash/{trashed['id']}/restore",headers=headers()).status_code==404
+    client.delete(f'/api/transactions/{restored}',headers=headers())
+    tid=client.get('/api/trash',headers=headers()).json['entries'][0]['id']
+    assert client.delete(f'/api/trash/{tid}',json={},headers=headers()).status_code==400
+    assert client.delete(f'/api/trash/{tid}',json={'confirmation':'DELETE'},headers=headers()).status_code==200
+    assert client.get('/api/trash',headers=headers()).json['total']==0
+
+
+def test_profile_persists_and_is_owner_scoped(client):
+    assert client.put('/api/profile',json={'name':'Thearith','bio':'Student'},headers=headers()).status_code==200
+    assert client.get('/api/data',headers=headers()).json['user']['name']=='Thearith'
+    assert client.get('/api/profile',headers=headers()).json['bio']=='Student'
+    assert client.get('/api/profile',headers=headers(456)).json['name']==''
+    assert client.put('/api/profile',json={'name':' '},headers=headers()).status_code==400
+    assert client.put('/api/profile',json={'name':'A'*81},headers=headers()).status_code==400
+
+
+def test_category_limits_and_comparison_after_restore(client):
+    a=payload();identity=client.post('/api/transactions',json=a,headers=headers()).json['id']
+    b={**a,'amount':'10','day':'2025-12-10','request_id':'previous-month-test'}
+    client.post('/api/transactions',json=b,headers=headers())
+    client.post('/api/transactions',json={**b,'amount':'100'},headers=headers(456))
+    limit={'month':'2026-01','currency':'USD','category':'food','amount':'20'}
+    assert client.put('/api/category-budgets',json=limit,headers=headers()).status_code==200
+    assert client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets'][0]['spent']==1234
+    assert not client.get('/api/category-budgets?month=2026-01',headers=headers(456)).json['budgets']
+    data=client.get('/api/compare?month=2026-01',headers=headers()).json
+    assert data['previous_month']=='2025-12'
+    assert data['totals']['previous']['USD']['expense']==1000
+    assert data['totals']['current']['USD']['expense']==1234
+    client.delete(f'/api/transactions/{identity}',headers=headers())
+    assert client.get('/api/compare?month=2026-01',headers=headers()).json['totals']['current']['USD']['expense']==0
+    tid=client.get('/api/trash',headers=headers()).json['entries'][0]['id']
+    client.post(f'/api/trash/{tid}/restore',headers=headers())
+    assert client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets'][0]['spent']==1234
+    client.delete('/api/category-budgets',json=limit,headers=headers())
+    assert not client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets']
+
+
+def test_bulk_delete_moves_all_selected_to_trash(client):
+    for i in range(3):client.post('/api/transactions',json={**payload(),'request_id':f'bulk-trash-{i}'},headers=headers())
+    batch=client.post('/api/transactions/delete-preview',json={'scope':'all'},headers=headers()).json
+    assert client.post('/api/transactions/delete-confirm',json={'token':batch['token'],'confirmation':'DELETE'},headers=headers()).json['deleted']==3
+    assert client.get('/api/trash',headers=headers()).json['total']==3
+    assert not client.get('/api/data?month=2026-01',headers=headers()).json['transactions']
+
+
+def test_photo_size_and_json_limit(client):
+    identity=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
+    assert client.put(f'/api/transactions/{identity}/photo',data=b'x'*(2*1024*1024+1),headers=headers()).status_code==400
+    assert client.put('/api/profile',json={'name':'x','bio':'x'*17000},headers=headers()).status_code==413

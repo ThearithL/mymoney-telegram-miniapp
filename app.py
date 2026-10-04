@@ -19,6 +19,7 @@ from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInte
                         String, Text, Date, UniqueConstraint, select, insert, update, delete, func)
 from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
+from personal_features import define_tables, register_features, archive_rows
 
 load_dotenv()
 CATEGORIES = ['food', 'coffee', 'transport', 'shopping', 'bills', 'study', 'health', 'other', 'salary']
@@ -72,6 +73,8 @@ delete_batches = Table('delete_batches', metadata,
     Column('ids_json', Text, nullable=False), Column('expires_at', BigInteger, nullable=False))
 
 
+personal_tables = define_tables(metadata)
+
 def validate_init_data(raw, token, now=None):
     """Never trust initDataUnsafe or a user ID from a request body."""
     try:
@@ -124,7 +127,7 @@ def create_app(config=None):
                       WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET', ''),
                       ALLOWED_USER_IDS=os.getenv('ALLOWED_USER_IDS', ''),
                       ADMIN_USER_ID=os.getenv('ADMIN_USER_ID', ''),
-                      DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=16384)
+                      DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=3*1024*1024)
     if config:
         app.config.update(config)
     url = app.config['DATABASE_URL']
@@ -322,7 +325,7 @@ def create_app(config=None):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'"
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'"
         return response
 
     @app.get('/')
@@ -334,6 +337,8 @@ def create_app(config=None):
         return {'ok': True}
 
     def json_body():
+        if len(request.get_data()) > 16384:
+            abort(413, 'JSON request too large')
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             abort(400, 'Expected a JSON object')
@@ -374,7 +379,9 @@ def create_app(config=None):
             rows = conn.execute(select(transactions).where(transactions.c.user_id == g.user['id'],
                 transactions.c.day >= start, transactions.c.day < end).order_by(transactions.c.day.desc(), transactions.c.id.desc())).mappings().all()
             limits = conn.execute(select(budgets).where(budgets.c.user_id == g.user['id'], budgets.c.month == month)).mappings().all()
-        return jsonify(user={'name': (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
+        with engine.connect() as conn:
+            profile_name = conn.execute(select(personal_tables['profiles'].c.name).where(personal_tables['profiles'].c.user_id == g.user['id'])).scalar_one_or_none()
+        return jsonify(user={'name': profile_name or (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
                        transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits])
 
     @app.get('/api/summary')
@@ -436,8 +443,10 @@ def create_app(config=None):
             ids = json.loads(batch)
             count = 0
             for start in range(0,len(ids),500):
-                count += conn.execute(delete(transactions).where(transactions.c.user_id==g.user['id'],
-                    transactions.c.request_id.in_(ids[start:start+500]))).rowcount
+                deleted_rows = conn.execute(delete(transactions).where(transactions.c.user_id==g.user['id'],
+                    transactions.c.request_id.in_(ids[start:start+500])).returning(*transactions.c)).mappings().all()
+                archive_rows(conn, deleted_rows, personal_tables)
+                count += len(deleted_rows)
         return {'deleted':count}
 
     @app.get('/api/goals')
@@ -517,6 +526,9 @@ def create_app(config=None):
         key = body.get('request_id', '')
         if not isinstance(key, str) or not 8 <= len(key) <= 64:
             abort(400, 'Missing request ID')
+        with engine.connect() as conn:
+            if conn.execute(select(personal_tables['trash'].c.id).where(personal_tables['trash'].c.user_id==g.user['id'],personal_tables['trash'].c.request_id==key)).first():
+                abort(409, 'This entry is in trash. Restore it instead of retrying its creation.')
         try:
             with engine.begin() as conn:
                 result = conn.execute(insert(transactions).values(**values, user_id=g.user['id'], request_id=key))
@@ -544,9 +556,10 @@ def create_app(config=None):
     @auth
     def remove(identity):
         with engine.begin() as conn:
-            result = conn.execute(delete(transactions).where(transactions.c.id == identity, transactions.c.user_id == g.user['id']))
-            if not result.rowcount:
+            removed = conn.execute(delete(transactions).where(transactions.c.id == identity, transactions.c.user_id == g.user['id']).returning(*transactions.c)).mappings().all()
+            if not removed:
                 abort(404, 'Transaction not found')
+            archive_rows(conn, removed, personal_tables)
         return {'ok': True}
 
     @app.put('/api/budget')
@@ -710,4 +723,5 @@ def create_app(config=None):
             return {'error': 'Telegram delivery failed'}, 502
         return {'ok': True}
 
+    register_features(app, engine, transactions, personal_tables, auth, json_body, amount_units, month_value, CATEGORIES)
     return app

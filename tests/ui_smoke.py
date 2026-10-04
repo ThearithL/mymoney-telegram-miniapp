@@ -1,5 +1,6 @@
 """Optional integration check: install playwright==1.51.0 and its Chromium browser."""
-import hashlib,hmac,json,sys,tempfile,threading,time,uuid
+import hashlib,hmac,json,sys,tempfile,threading,time,uuid,io
+from PIL import Image
 from pathlib import Path
 from urllib.parse import urlencode
 from datetime import datetime
@@ -55,7 +56,13 @@ with tempfile.TemporaryDirectory() as temp:
                 assert '33.3%' in page.locator('#donutPanel').inner_text()
                 if width==1280: page.screenshot(path='/tmp/mymoney-reports-latest.png',full_page=True)
                 page.locator('[data-page="history"]').click()
-                page.locator('#historyList .row').first.click();page.locator('#editReceipt').click()
+                page.locator('#historyList .row').first.click()
+                if width==320:
+                    image=io.BytesIO();Image.new('RGB',(50,40),'green').save(image,format='PNG')
+                    page.locator('#photoFile').set_input_files({'name':'receipt.png','mimeType':'image/png','buffer':image.getvalue()})
+                    page.locator('#uploadPhoto').click()
+                    wait_state(page,'() => document.getElementById("receiptPhoto").naturalWidth > 0')
+                page.locator('#editReceipt').click()
                 page.locator('#amount').fill('18000');page.locator('#saveEntry').click()
                 wait_state(page, '() => !document.getElementById("entryDialog").open && state.transactions.some(r=>r.amount===18000)')
                 page.locator('#toggleSelect').click();page.locator('#historyList input[type=checkbox]').first.check()
@@ -68,6 +75,27 @@ with tempfile.TemporaryDirectory() as temp:
                 page.locator('#deletePhrase').fill('DELETE');page.locator('#confirmBulk').click()
                 wait_state(page, '() => !document.getElementById("bulkDialog").open && state.transactions.length===0')
                 page.locator('[data-page="reports"]').click();assert 'No expenses' in page.locator('#donutPanel').inner_text()
+                if width==320:
+                    page.locator('[data-page="settings"]').click()
+                    page.locator('#profileName').fill('Thearith Personal');page.locator('#profileBio').fill('Student')
+                    page.locator('#profileForm button').click()
+                    wait_state(page,'() => state.user.name === "Thearith Personal"')
+                    page.locator('#openTrash').click()
+                    card=page.locator('.trash-card').filter(has_text='Demo coffee')
+                    card.locator('button').first.click()
+                    wait_state(page,'() => state.transactions.length === 1')
+                    page.locator('[data-page="history"]').click();page.locator('#historyList .row').first.click()
+                    wait_state(page,'() => document.getElementById("receiptPhoto").naturalWidth > 0')
+                    page.locator('#closeReceipt').click()
+                    page.locator('[data-page="home"]').click();page.locator('#manageBudget').click()
+                    page.locator('#budgetCategory').select_option('coffee');page.locator('#categoryLimit').fill('20000')
+                    page.locator('#categoryBudgetForm button').click()
+                    wait_state(page,'() => categoryData.some(r=>r.category === "coffee" && r.spent === 18000)')
+                    assert '90%' in page.locator('#categoryLimits').inner_text()
+                    page.locator('[data-page="reports"]').click()
+                    assert page.locator('#comparison').inner_text()
+                    active=client.get('/api/data?month='+today[:7],headers={'Authorization':'tma '+auth(123)}).json['transactions']
+                    for entry in active:client.delete('/api/transactions/'+str(entry['id']),headers={'Authorization':'tma '+auth(123)})
                 assert not errors,errors
                 assert len(client.get('/api/data?month='+today[:7],headers={'Authorization':'tma '+auth(456)}).json['transactions'])==1
                 print(f'PASS {width}x{height}: languages/themes, navigation, donut, edit, selected/all delete, isolation; no JS errors',flush=True)
