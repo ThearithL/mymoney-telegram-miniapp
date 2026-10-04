@@ -13,6 +13,7 @@ def define_tables(metadata):
       'photos':Table('receipt_photos',metadata,Column('user_id',BigInteger,primary_key=True),Column('request_id',String(64),primary_key=True),Column('data',LargeBinary,nullable=False)),
       'profiles':Table('personal_profiles',metadata,Column('user_id',BigInteger,primary_key=True),Column('name',String(80),nullable=False),Column('bio',String(160),nullable=False)),
       'fx':Table('currency_display_settings',metadata,Column('user_id',BigInteger,primary_key=True),Column('base_currency',String(3),nullable=False),Column('rate_khr_per_usd',Numeric(12,4),nullable=False)),
+      'custom_categories':Table('custom_categories',metadata,Column('user_id',BigInteger,primary_key=True),Column('key',String(20),primary_key=True),Column('name',String(40),nullable=False),Column('kind',String(10),nullable=False)),
       'favorites':Table('expense_favorites',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('title',String(60),nullable=False),Column('kind',String(10),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('account',String(20),nullable=False),Column('note',String(300),nullable=False)),
       'category_budgets':Table('category_budgets',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),UniqueConstraint('user_id','month','currency','category'))}
 
@@ -22,7 +23,11 @@ def archive_rows(conn,rows,tables):
         conn.execute(insert(tables['trash']).values(user_id=data['user_id'],snapshot=json.dumps(data),request_id=data['request_id'],deleted_at=int(time.time())))
 
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
-    trash,photos,profiles,limits,favorites,fx=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx'])
+    trash,photos,profiles,limits,favorites,fx,custom_categories=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories'])
+    def category_allowed(key,kind=None):
+        if key in categories:return kind is None or kind in ('expense','income')
+        with engine.connect() as conn:row=conn.execute(select(custom_categories.c.kind).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key)).scalar_one_or_none()
+        return row is not None and (kind is None or row in (kind,'both'))
     def upsert(table):
         if engine.dialect.name=='postgresql':
             from sqlalchemy.dialects.postgresql import insert as dialect_insert
@@ -47,6 +52,54 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         if not isinstance(name,str) or not 1<=len(name.strip())<=80 or not isinstance(bio,str) or len(bio)>160:abort(400,'Name: 1–80 characters; bio: up to 160.')
         values={'user_id':g.user['id'],'name':name.strip(),'bio':bio.strip()}
         with engine.begin() as conn:conn.execute(upsert(profiles).values(**values).on_conflict_do_update(index_elements=['user_id'],set_={'name':values['name'],'bio':values['bio']}))
+        return {'ok':True}
+
+    @app.get('/api/categories')
+    @auth
+    def categories_get():
+        with engine.connect() as conn:rows=conn.execute(select(custom_categories).where(custom_categories.c.user_id==g.user['id']).order_by(custom_categories.c.name)).mappings().all()
+        return {'categories':[{'key':r['key'],'name':r['name'],'kind':r['kind']} for r in rows]}
+
+    @app.post('/api/categories')
+    @auth
+    def categories_add():
+        body=json_body();name=body.get('name');kind=body.get('kind')
+        if not isinstance(name,str) or not 1<=len(name.strip())<=40 or kind not in ('expense','income','both'):abort(400,'Enter a category name up to 40 characters and choose its type.')
+        name=name.strip()
+        with engine.begin() as conn:
+            count=conn.execute(select(func.count()).select_from(custom_categories).where(custom_categories.c.user_id==g.user['id'])).scalar_one()
+            duplicate=conn.execute(select(custom_categories.c.key).where(custom_categories.c.user_id==g.user['id'],func.lower(custom_categories.c.name)==name.lower())).first()
+            if count>=40:abort(409,'You can create up to 40 custom categories.')
+            if duplicate:abort(409,'A category with that name already exists.')
+            key='c_'+uuid.uuid4().hex[:14]
+            conn.execute(insert(custom_categories).values(user_id=g.user['id'],key=key,name=name,kind=kind))
+        return {'key':key,'name':name,'kind':kind},201
+
+    @app.put('/api/categories/<key>')
+    @auth
+    def categories_rename(key):
+        body=json_body();name=body.get('name')
+        if not isinstance(name,str) or not 1<=len(name.strip())<=40:abort(400,'Enter a category name up to 40 characters.')
+        name=name.strip()
+        with engine.begin() as conn:
+            row=conn.execute(select(custom_categories.c.key).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key)).first()
+            duplicate=conn.execute(select(custom_categories.c.key).where(custom_categories.c.user_id==g.user['id'],func.lower(custom_categories.c.name)==name.lower(),custom_categories.c.key!=key)).first()
+            if row is None:abort(404,'Category not found.')
+            if duplicate:abort(409,'A category with that name already exists.')
+            conn.execute(custom_categories.update().where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key).values(name=name))
+        return {'ok':True,'key':key,'name':name}
+
+    @app.delete('/api/categories/<key>')
+    @auth
+    def categories_remove(key):
+        with engine.begin() as conn:
+            row=conn.execute(select(custom_categories).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key)).mappings().first()
+            if row is None:abort(404,'Category not found.')
+            references=sum(conn.execute(select(func.count()).select_from(table).where(table.c.user_id==g.user['id'],table.c.category==key)).scalar_one() for table in (transactions,limits,favorites))
+            archived=conn.execute(select(trash.c.snapshot).where(trash.c.user_id==g.user['id'])).scalars().all()
+            references+=sum(1 for snapshot in archived if json.loads(snapshot).get('category')==key)
+            if references:abort(409,'This category is used by saved entries, budgets, favorites or trash. Rename it instead to keep that history.')
+            conn.execute(delete(custom_categories).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key))
         return {'ok':True}
 
     @app.get('/api/trash')
@@ -151,7 +204,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @auth
     def favorites_add():
         body=json_body();title=body.get('title');kind=body.get('kind');category=body.get('category');account=body.get('account');note=body.get('note','');currency=body.get('currency')
-        if not isinstance(title,str) or not title.strip() or len(title.strip())>60 or kind not in ('expense','income') or category not in categories or account not in ('cash','bank') or not isinstance(note,str) or len(note)>300:abort(400,'Check favorite details.')
+        if not isinstance(title,str) or not title.strip() or len(title.strip())>60 or kind not in ('expense','income') or not category_allowed(category,kind) or account not in ('cash','bank') or not isinstance(note,str) or len(note)>300:abort(400,'Check favorite details.')
         amount=amount_units(body.get('amount'),currency)
         with engine.begin() as conn:
             count=conn.execute(select(func.count()).select_from(favorites).where(favorites.c.user_id==g.user['id'])).scalar_one()
@@ -180,7 +233,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @auth
     def category_put():
         body=json_body();month=month_value(body.get('month',''));category=body.get('category');currency=body.get('currency')
-        if category not in categories or category=='salary':abort(400,'Choose an expense category')
+        if not category_allowed(category,'expense') or category=='salary':abort(400,'Choose an expense category')
         values={'user_id':g.user['id'],'month':month,'category':category,'currency':currency,'amount':amount_units(body.get('amount'),currency)}
         with engine.begin() as conn:conn.execute(upsert(limits).values(**values).on_conflict_do_update(index_elements=['user_id','month','currency','category'],set_={'amount':values['amount']}))
         return {'ok':True}

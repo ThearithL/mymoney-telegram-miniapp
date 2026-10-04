@@ -352,7 +352,15 @@ def create_app(config=None):
             currency = body['currency']
             day = date.fromisoformat(body['day'])
             note = body.get('note', '')
-            if kind not in ('expense', 'income') or category not in CATEGORIES or account not in ('cash', 'bank'):
+            builtin = category in CATEGORIES
+            custom = False
+            if isinstance(category, str) and not builtin and kind in ('expense', 'income'):
+                custom_table = personal_tables['custom_categories']
+                with engine.connect() as conn:
+                    category_kind = conn.execute(select(custom_table.c.kind).where(
+                        custom_table.c.user_id == g.user['id'], custom_table.c.key == category)).scalar_one_or_none()
+                custom = category_kind in (kind, 'both')
+            if kind not in ('expense', 'income') or not (builtin or custom) or account not in ('cash', 'bank'):
                 raise ValueError()
             if not isinstance(note, str) or len(note) > 300 or day.year < 2000 or day > datetime.now(TZ).date():
                 raise ValueError()

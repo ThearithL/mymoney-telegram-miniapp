@@ -491,3 +491,23 @@ def test_fx_display_settings_are_validated_and_private(client):
     assert client.get('/api/fx',headers=headers(456)).json=={'base_currency':'KHR','rate_khr_per_usd':4000.0}
     for currency,rate in [('EUR',4000),('KHR',0),('USD',100001),('USD','NaN'),('USD','4.12345')]:
         assert client.put('/api/fx',json={'base_currency':currency,'rate_khr_per_usd':rate},headers=headers()).status_code==400
+
+
+def test_custom_categories_crud_ownership_and_transaction_use(client):
+    created=client.post('/api/categories',json={'name':'Pets','kind':'expense'},headers=headers())
+    assert created.status_code==201
+    category=created.json
+    assert category['name']=='Pets' and category['kind']=='expense'
+    assert client.get('/api/categories',headers=headers(456)).json=={'categories':[]}
+    entry={**payload(),'currency':'KHR','amount':'2500','category':category['key']}
+    assert client.post('/api/transactions',json=entry,headers=headers()).status_code==201
+    assert client.post('/api/transactions',json={**entry,'request_id':'wrong-owner-category'},headers=headers(456)).status_code==400
+    assert client.put('/api/categories/'+category['key'],json={'name':'Pet care'},headers=headers()).status_code==200
+    assert client.delete('/api/categories/'+category['key'],headers=headers()).status_code==409
+    assert client.put('/api/categories/'+category['key'],json={'name':'Pets'},headers=headers(456)).status_code==404
+    income=client.post('/api/categories',json={'name':'Gift money','kind':'income'},headers=headers()).json
+    wrong_type={**payload(),'category':income['key'],'request_id':'wrong-category-type'}
+    assert client.post('/api/transactions',json=wrong_type,headers=headers()).status_code==400
+    assert client.put('/api/category-budgets',json={'month':'2026-01','currency':'KHR','category':income['key'],'amount':'20'},headers=headers()).status_code==400
+    assert client.delete('/api/categories/'+income['key'],headers=headers()).status_code==200
+    assert client.post('/api/categories',json={'name':'  ','kind':'both'},headers=headers()).status_code==400
