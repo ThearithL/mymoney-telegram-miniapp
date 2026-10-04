@@ -587,7 +587,7 @@ def create_app(config=None):
         with engine.begin() as conn:
             conn.execute(stmt)
         budget_warning(g.user['id'],month,currency)
-        return {'ok': True}
+        return {'ok': True, 'month': month, 'currency': currency, 'amount': amount}
 
     @app.get('/api/export')
     @auth

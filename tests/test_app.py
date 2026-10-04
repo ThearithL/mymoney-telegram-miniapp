@@ -57,8 +57,11 @@ def test_rejects_invalid_money(client,amount,currency):
 
 def test_budget_currency_and_month_isolation(client):
     for currency,amount in [('USD','100.25'),('KHR','200000')]:
-        assert client.put('/api/budget',json={'month':'2026-01','currency':currency,'amount':amount},headers=headers()).status_code==200
-    client.put('/api/budget',json={'month':'2026-01','currency':'USD','amount':'200'},headers=headers())
+        response=client.put('/api/budget',json={'month':'2026-01','currency':currency,'amount':amount},headers=headers())
+        assert response.status_code==200
+        assert response.json['amount']==(10025 if currency=='USD' else 200000)
+    updated=client.put('/api/budget',json={'month':'2026-01','currency':'USD','amount':'200'},headers=headers())
+    assert updated.json=={'ok':True,'month':'2026-01','currency':'USD','amount':20000}
     budgets=client.get('/api/data?month=2026-01',headers=headers()).json['budgets']
     assert {b['currency']:b['amount'] for b in budgets}=={'USD':20000,'KHR':200000}
     assert not client.get('/api/data?month=2026-02',headers=headers()).json['budgets']

@@ -55,6 +55,18 @@ Admin → ទទួលឈ្មោះ និង ID → ចុច `Approve` ឬ `
 
 Neon រក្សាទុកសិទ្ធិ និងទិន្នន័យក្រៅ Render។ Render Free នៅតែអាច sleep ហើយ Bot អាចឆ្លើយយឺតពេលភ្ញាក់ឡើងវិញ។
 
+## ជួយកុំឱ្យ Render Free sleep
+
+Project មាន health URL រួចហើយ៖ `https://mymoney-telegram-miniapp.onrender.com/health`។ វាត្រឡប់ HTTP 200 និង `{"ok": true}`។ Render health check មិនអាចទប់ការគេងរបស់ Free service បានទេ។
+
+ដើម្បីសាកល្បង keep-alive ដោយមិនចាំបាច់បង់ប្រាក់៖
+
+1. បង្កើត monitor ប្រភេទ **HTTP(s)** នៅសេវា uptime monitor ខាងក្រៅ ដូចជា UptimeRobot Free។
+2. ដាក់ URL `https://mymoney-telegram-miniapp.onrender.com/health` និង interval **5 minutes**។
+3. រក្សាទុក monitor ហើយពិនិត្យថាស្ថានភាពបង្ហាញ **Up**។
+
+Request ខាងក្រៅរៀងរាល់ 5 នាទីអាចជួយកុំឱ្យ Render មើលឃើញថា service គ្មាន traffic 15 នាទី។ វាជា workaround ប៉ុណ្ណោះ៖ Render អាច restart Free service បានគ្រប់ពេល ហើយមិនមានការធានា uptime 24/24 ទេ។
+
 ## Update ថ្មី
 
 Upload ឯកសារទាំងអស់ក្នុង ZIP ជំនួសកូដចាស់ រួមទាំង admin_panel.py និង static ទាំងមូល។ រក្សា DATABASE_URL របស់ Neon ដដែល។ Deploy រួចផ្ញើ /start ហើយ /admin ពីគណនីម្ចាស់។
