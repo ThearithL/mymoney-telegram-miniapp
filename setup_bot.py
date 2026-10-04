@@ -10,9 +10,9 @@ secret = os.environ['WEBHOOK_SECRET']
 if not url.startswith('https://') or not re.fullmatch(r'[A-Za-z0-9_-]{16,256}', secret):
     raise SystemExit('APP_URL must be HTTPS; WEBHOOK_SECRET needs 16–256 letters/digits/_/-.')
 for method, body in [
-    ('setWebhook', {'url': url + '/telegram/webhook', 'secret_token': secret, 'allowed_updates': ['message']}),
+    ('setWebhook', {'url': url + '/telegram/webhook', 'secret_token': secret, 'allowed_updates': ['message', 'callback_query']}),
     ('setChatMenuButton', {'menu_button': {'type': 'web_app', 'text': '💰 MyMoney', 'web_app': {'url': url}}}),
-    ('setMyCommands', {'commands': [{'command': 'start', 'description': 'Open MyMoney'}, {'command': 'menu', 'description': 'Show menu'}, {'command': 'id', 'description': 'Show my Telegram ID'}]})
+    ('setMyCommands', {'commands': [{'command': 'start', 'description': 'Open MyMoney'}, {'command': 'menu', 'description': 'Show menu'}, {'command': 'id', 'description': 'Show my Telegram ID'}, {'command': 'request', 'description': 'Request access'}, {'command': 'requests', 'description': 'Admin: pending requests'}]})
 ]:
     try:
         response = requests.post(f'https://api.telegram.org/bot{token}/{method}', json=body, timeout=20)

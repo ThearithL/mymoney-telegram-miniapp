@@ -29,4 +29,45 @@ $('export').addEventListener('click',async()=>{$('export').disabled=true;try{con
 $('language').onclick=toggleLanguage;$('switchLanguage').onclick=toggleLanguage;
 $('addExpense').onclick=()=>openEntry('expense');$('addIncome').onclick=()=>openEntry('income');$('closeDialog').onclick=()=>$('entryDialog').close();$('entryCurrency').onchange=precision;$('manageBudget').onclick=()=>showPage('budget');$('viewAll').onclick=()=>showPage('history');$('month').onchange=()=>{pageSize=20;load();};$('currency').onchange=()=>{pageSize=20;render();};$('search').oninput=()=>{pageSize=20;renderHistory();};$('more').onclick=()=>{pageSize+=20;renderHistory();};document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;pageSize=20;document.querySelectorAll('[data-filter]').forEach(n=>n.classList.toggle('selected',n===b));renderHistory();});
 $('month').value=today().slice(0,7);translate();
-if(tg?.initData){tg.ready();tg.expand();tg.BackButton.onClick(()=>{if($('entryDialog').open)$('entryDialog').close();else showPage('home');});load();}else{notify(t('openTelegram'));}
+// Open the Mini App in fullscreen when the Telegram client supports it.
+// Unsupported clients keep the normal expanded view and can still use the app.
+if (tg?.initData) {
+  tg.ready();
+  tg.expand();
+
+  if (tg.isVersionAtLeast('8.0')) {
+    tg.onEvent('fullscreenFailed', (event) => {
+      console.warn('Fullscreen unavailable:', event.error);
+    });
+
+    // Keep content away from Telegram controls and device navigation bars.
+    const syncSafeArea = () => {
+      const top = (tg.safeAreaInset?.top || 0) + (tg.contentSafeAreaInset?.top || 0);
+      const bottom = (tg.safeAreaInset?.bottom || 0) + (tg.contentSafeAreaInset?.bottom || 0);
+      const shell = document.querySelector('.shell');
+      const nav = document.querySelector('nav');
+      shell.style.paddingTop = Math.max(24, top + 12) + 'px';
+      shell.style.paddingBottom = (100 + bottom) + 'px';
+      nav.style.paddingBottom = (10 + bottom) + 'px';
+    };
+    tg.onEvent('safeAreaChanged', syncSafeArea);
+    tg.onEvent('contentSafeAreaChanged', syncSafeArea);
+    tg.onEvent('fullscreenChanged', syncSafeArea);
+    syncSafeArea();
+
+    try {
+      if (!tg.isFullscreen) tg.requestFullscreen();
+    } catch (error) {
+      console.warn('Fullscreen unavailable:', error);
+    }
+  }
+
+  tg.BackButton.onClick(() => {
+    if ($('entryDialog').open) $('entryDialog').close();
+    else showPage('home');
+  });
+  load();
+} else {
+  notify(t('openTelegram'));
+}
+

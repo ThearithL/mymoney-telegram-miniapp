@@ -3,7 +3,7 @@ services:
     name: mymoney-miniapp
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
+    startCommand: python setup_bot.py && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -14,6 +14,8 @@ services:
         sync: false
       - key: WEBHOOK_SECRET
         generateValue: true
+      - key: ADMIN_USER_ID
+        sync: false
       - key: ALLOWED_USER_IDS
         sync: false
       - key: DATABASE_URL

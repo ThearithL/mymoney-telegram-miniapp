@@ -5,6 +5,7 @@ import io
 import json
 import os
 import time
+import uuid
 from datetime import date, datetime
 from decimal import Decimal, DecimalException
 from functools import wraps
@@ -33,6 +34,13 @@ budgets = Table('budgets', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False),
     Column('month', String(7), nullable=False), Column('currency', String(3), nullable=False),
     Column('amount', BigInteger, nullable=False), UniqueConstraint('user_id', 'month', 'currency'))
+
+access_requests = Table('access_requests', metadata,
+    Column('user_id', BigInteger, primary_key=True),
+    Column('name', String(200), nullable=False),
+    Column('status', String(20), nullable=False),
+    Column('request_key', String(32), nullable=False, unique=True),
+    Column('notified_at', BigInteger, nullable=False, default=0))
 
 
 def validate_init_data(raw, token, now=None):
@@ -86,6 +94,7 @@ def create_app(config=None):
     app.config.update(BOT_TOKEN=os.getenv('BOT_TOKEN', ''), APP_URL=os.getenv('APP_URL', '').rstrip('/'),
                       WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET', ''),
                       ALLOWED_USER_IDS=os.getenv('ALLOWED_USER_IDS', ''),
+                      ADMIN_USER_ID=os.getenv('ADMIN_USER_ID', ''),
                       DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=16384)
     if config:
         app.config.update(config)
@@ -97,17 +106,79 @@ def create_app(config=None):
     app.extensions['engine'] = engine
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
+    admin = int(app.config['ADMIN_USER_ID'] or 0)
+
+    def has_access(uid):
+        if uid == admin or uid in allowed:
+            return True
+        with engine.connect() as conn:
+            return conn.execute(select(access_requests.c.status).where(
+                access_requests.c.user_id == uid)).scalar() == 'approved'
+
+    def telegram(method, payload):
+        try:
+            response = requests.post(
+                f"https://api.telegram.org/bot{app.config['BOT_TOKEN']}/{method}",
+                json=payload, timeout=10)
+            return response.ok and response.json().get('ok', False)
+        except (requests.RequestException, ValueError):
+            return False
+
+    def access_buttons(row):
+        key = row['request_key']
+        return {'inline_keyboard': [[
+            {'text': '✅ អនុញ្ញាត / Approve', 'callback_data': 'approve:' + key},
+            {'text': '❌ បដិសេធ / Reject', 'callback_data': 'reject:' + key}]]}
+
+    def notify_admin(row):
+        return telegram('sendMessage', {
+            'chat_id': admin,
+            'text': f"🔓 សំណើចូលប្រើ / Access request\nឈ្មោះ / Name: {row['name']}\nTelegram ID: {row['user_id']}",
+            'reply_markup': access_buttons(row)})
+
+    def request_access(user):
+        uid = user['id']
+        if has_access(uid):
+            return '✅ អ្នកមានសិទ្ធិរួចហើយ / Already allowed. Send /start.'
+        if not admin:
+            return '⚙️ Admin not configured. Send /id and contact the owner.'
+        name = str(user.get('first_name', 'User'))[:200]
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as upsert
+        with engine.begin() as conn:
+            conn.execute(upsert(access_requests).values(user_id=uid, name=name,
+                status='pending', request_key=uuid.uuid4().hex, notified_at=0
+                ).on_conflict_do_nothing(index_elements=['user_id']))
+            row = conn.execute(select(access_requests).where(access_requests.c.user_id == uid)).mappings().one()
+            if row['status'] == 'rejected':
+                return '❌ សំណើត្រូវបានបដិសេធ / Request rejected. Contact the owner.'
+            if row['status'] == 'approved':
+                return '✅ អ្នកមានសិទ្ធិរួចហើយ / Already allowed. Send /start.'
+            now = int(time.time())
+            # Atomic claim prevents repeated taps/concurrent workers from spamming admin.
+            claimed = conn.execute(update(access_requests).where(
+                access_requests.c.user_id == uid, access_requests.c.status == 'pending',
+                access_requests.c.notified_at <= now - 60).values(notified_at=now)).rowcount
+        if claimed and not notify_admin(row):
+            with engine.begin() as conn:
+                conn.execute(update(access_requests).where(access_requests.c.user_id == uid,
+                    access_requests.c.notified_at == now).values(notified_at=0))
+            return '⏳ សំណើបានរក្សាទុក / Request saved, but admin notification failed. Admin can send /requests.'
+        return '⏳ សំណើបានរក្សាទុក។ សូមរង់ចាំ Admin / Request pending admin approval.'
+
     def auth(fn):
         @wraps(fn)
         def wrapped(*args, **kwargs):
-            if not app.config['BOT_TOKEN'] or not allowed:
-                abort(503, 'Owner must configure BOT_TOKEN and ALLOWED_USER_IDS.')
+            if not app.config['BOT_TOKEN'] or not (allowed or admin):
+                abort(503, 'Owner must configure BOT_TOKEN and ADMIN_USER_ID (or ALLOWED_USER_IDS).')
             header = request.headers.get('Authorization', '')
             if not header.startswith('tma '):
                 abort(401, 'Open this app using the Telegram bot menu.')
             g.user = validate_init_data(header[4:], app.config['BOT_TOKEN'])
-            if g.user['id'] not in allowed:
-                abort(403, 'Access disabled for this Telegram user.')
+            if not has_access(g.user['id']):
+                abort(403, 'Access disabled. Close the Mini App and send /request to the bot. សូមផ្ញើ /request ទៅ Bot។')
             return fn(*args, **kwargs)
         return wrapped
 
@@ -253,26 +324,85 @@ def create_app(config=None):
         secret = app.config['WEBHOOK_SECRET']
         if not secret or not hmac.compare_digest(request.headers.get('X-Telegram-Bot-Api-Secret-Token', ''), secret):
             abort(403)
-        message = (request.get_json(silent=True) or {}).get('message', {})
+
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            abort(400, 'Invalid update')
+        callback = body.get('callback_query')
+        if callback:
+            user = callback.get('from', {})
+            uid = user.get('id')
+            callback_id = callback.get('id')
+            action = callback.get('data', '')
+            message = callback.get('message', {})
+            chat = message.get('chat', {})
+            if chat.get('type') != 'private' or chat.get('id') != uid:
+                telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': 'Use your private bot chat.'})
+                return {'ok': True}
+            if action == 'request_access':
+                telegram('answerCallbackQuery', {'callback_query_id': callback_id})
+                text = request_access(user)
+                telegram('sendMessage', {'chat_id': uid, 'text': text})
+                return {'ok': True}
+            # Never derive admin identity from callback data or target user ID.
+            if not admin or uid != admin:
+                telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': 'Admin only', 'show_alert': True})
+                return {'ok': True}
+            operation, _, key = action.partition(':')
+            if operation not in ('approve', 'reject') or len(key) != 32:
+                telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': 'Invalid action'})
+                return {'ok': True}
+            status = 'approved' if operation == 'approve' else 'rejected'
+            with engine.begin() as conn:
+                row = conn.execute(select(access_requests).where(access_requests.c.request_key == key)).mappings().first()
+                changed = row and conn.execute(update(access_requests).where(
+                    access_requests.c.request_key == key, access_requests.c.status == 'pending'
+                    ).values(status=status)).rowcount
+            if not changed:
+                telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': 'Already handled or unavailable'})
+                return {'ok': True}
+            telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': status.capitalize()})
+            delivered = telegram('sendMessage', {'chat_id': row['user_id'], 'text':
+                '✅ បានអនុញ្ញាត / Access approved! Send /start and reopen MyMoney.' if status == 'approved'
+                else '❌ សំណើត្រូវបានបដិសេធ / Access request rejected.'})
+            telegram('editMessageText', {'chat_id': admin, 'message_id': message['message_id'],
+                'text': f"{status.upper()} — {row['name']}\nTelegram ID: {row['user_id']}" +
+                ('' if delivered else '\nNotification failed; access decision is saved.'),
+                'reply_markup': {'inline_keyboard': []}})
+            return {'ok': True}
+
+        message = body.get('message', {})
         chat = message.get('chat', {})
         if chat.get('type') != 'private':
             return {'ok': True}
-        uid = message.get('from', {}).get('id')
+        user = message.get('from', {})
+        uid = user.get('id')
         command = message.get('text', '').split(' ')[0].split('@')[0]
         payload = {'chat_id': chat['id']}
         if command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
-        elif uid not in allowed:
-            payload['text'] = '🔒 Access disabled. Send /id and ask the owner to add your ID.'
+        elif command == '/request':
+            payload['text'] = request_access(user)
+        elif command == '/requests':
+            if not admin or uid != admin:
+                payload['text'] = '🔒 Admin only.'
+            else:
+                with engine.connect() as conn:
+                    pending = conn.execute(select(access_requests).where(
+                        access_requests.c.status == 'pending').order_by(access_requests.c.user_id).limit(5)).mappings().all()
+                delivered = sum(bool(notify_admin(row)) for row in pending)
+                payload['text'] = f'Pending requests sent: {delivered}/{len(pending)}. Approve/reject these, then send /requests for the next batch.' if pending else '✅ No pending requests.'
+        elif not has_access(uid):
+            payload['text'] = f'🔒 សូមស្នើសុំចូលប្រើ / Request access to MyMoney.\nTelegram ID: {uid}'
+            payload['reply_markup'] = {'inline_keyboard': [[{
+                'text': '🔓 ស្នើសុំចូលប្រើ / Request access', 'callback_data': 'request_access'}]]}
         else:
             payload['text'] = '💰 លុយខ្ញុំ · MyMoney\nកត់ចំណាយ និងមើលថវិការបស់អ្នក។\nOpen your personal money tracker below.'
+            if uid == admin:
+                payload['text'] += '\nAdmin: /requests — view pending access requests.'
             payload['reply_markup'] = {'inline_keyboard': [[{'text': '💰 បើក / Open MyMoney', 'web_app': {'url': app.config['APP_URL']}}]]}
-        try:
-            res = requests.post(f"https://api.telegram.org/bot{app.config['BOT_TOKEN']}/sendMessage", json=payload, timeout=10)
-            if not res.ok or not res.json().get('ok'):
-                return {'error': 'Telegram delivery failed'}, 502
-        except (requests.RequestException, ValueError):
-            return {'error': 'Telegram unavailable'}, 502
+        if not telegram('sendMessage', payload):
+            return {'error': 'Telegram delivery failed'}, 502
         return {'ok': True}
 
     return app

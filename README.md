@@ -1,10 +1,14 @@
-# លុយខ្ញុំ · MyMoney Telegram Mini App
+# លុយខ្ញុំ · MyMoney Telegram Mini App — Admin approval update
 
-A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bot webhook + responsive vanilla HTML/CSS/JavaScript. No frontend build step.
+A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bot webhook + responsive vanilla HTML/CSS/JavaScript. No frontend build step. Start with `RENDER_SETUP_KH.md` for the simplest Render + Neon deployment and owner bootstrap.
 
 ## Included
 
 - Telegram menu and inline button to open the Mini App.
+- Request access button, admin Approve/Reject buttons, persistent access decisions in Neon.
+- `/id` works before approval; `/request` submits access; `/requests` recovers pending requests for the owner.
+- `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
+- Fullscreen request with safe-area spacing on supported Telegram clients.
 - Khmer/English interface; mobile navigation, light/dark system theme.
 - Add income/expenses, category, cash/bank label, date and optional note.
 - Edit, confirmed delete, month/currency filters, history search and pagination.
@@ -46,11 +50,12 @@ Put the generated random string in `WEBHOOK_SECRET`. Edit `.env` with your own v
 BOT_TOKEN=your_botfather_token
 APP_URL=https://your-service.onrender.com
 WEBHOOK_SECRET=your_generated_random_secret
-ALLOWED_USER_IDS=your_numeric_telegram_id
+ADMIN_USER_ID=your_numeric_personal_telegram_id
+ALLOWED_USER_IDS=
 DATABASE_URL=postgresql://user:password@host/database
 ```
 
-Multiple allowed IDs are comma-separated. An empty allowlist disables Mini App access. No credentials are included in this project. Never commit `.env`.
+Optional extra pre-approved IDs in ALLOWED_USER_IDS are comma-separated. If both ADMIN_USER_ID and ALLOWED_USER_IDS are empty, Mini App access is disabled until owner bootstrap. Approved users are stored in access_requests, not environment variables. No credentials are included in this project. Never commit `.env`.
 
 ## 2. Deploy to Render with PostgreSQL
 
@@ -58,8 +63,8 @@ Multiple allowed IDs are comma-separated. An empty allowlist disables Mini App a
 2. Create a PostgreSQL database with a provider of your choice. Copy its connection URL. Configure the provider's required TLS options, e.g. `?sslmode=require` when required.
 3. Create a Render **Web Service** from that repository.
 4. Build command: `pip install -r requirements.txt`
-5. Start command: `gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60`
-6. Add the five environment variables above. Set `APP_URL` to the actual public HTTPS service URL, without a trailing slash. Set `PYTHON_VERSION` to `3.12.14` if using the included blueprint.
+5. Start command: `python setup_bot.py && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60`
+6. Add the environment variables above. Set `APP_URL` to the actual public HTTPS service URL, without a trailing slash. Set `PYTHON_VERSION` to `3.12.14` if using the included blueprint.
 7. Health check path: `/health`. Deploy. Tables are created automatically for a new database.
 
 `render.yaml` is also provided for Blueprint deployment; fill its prompted values. The blueprint does not provision a database or choose a service plan. Check the provider's current plan pricing, idle/sleep behavior, storage retention and backup policy before choosing it.
@@ -67,6 +72,10 @@ Multiple allowed IDs are comma-separated. An empty allowlist disables Mini App a
 **Do not use SQLite on an ephemeral host filesystem.** Use external PostgreSQL for deployed data. SQLite is only the local default. CSV is an export, not a full database backup (budgets are excluded). Enable database backups and test restoration. Schema changes in later versions need migrations; `create_all` does not migrate existing tables.
 
 ## 3. Connect Telegram to the deployed app
+
+The updated Render Start Command runs setup_bot.py automatically. You can skip local setup below when using that command. For first setup, leave ADMIN_USER_ID and ALLOWED_USER_IDS empty, deploy, send /id to the bot, then place your own numeric ID in ADMIN_USER_ID and redeploy. Send /start once as admin so the bot can notify you.
+
+### Optional local setup
 
 On your computer, set `.env` to the same `BOT_TOKEN`, `APP_URL` and `WEBHOOK_SECRET` as the deployed service, then run:
 
@@ -78,7 +87,7 @@ Linux/macOS: `.venv/bin/python setup_bot.py`.
 
 The script registers the webhook, chat menu button and `/start`, `/menu`, `/id` commands. It replaces any existing webhook for this bot; use a dedicated bot, and do not run a polling bot with the same token.
 
-**If you don't know your Telegram ID:** deploy initially with an empty `ALLOWED_USER_IDS`, run `setup_bot.py`, then send `/id` in your bot's private chat. Copy that numeric ID into Render's `ALLOWED_USER_IDS` environment variable and redeploy. The `/id` command works before access is allowed.
+**If you don't know your Telegram ID:** deploy initially with an empty `ALLOWED_USER_IDS`, run `setup_bot.py`, then send `/id` in your bot's private chat. Copy that numeric ID into Render's `ALLOWED_USER_IDS` environment variable and redeploy. The `/id` command works before access is allowed. For approval management, put your personal ID in ADMIN_USER_ID, not only in ALLOWED_USER_IDS.
 
 Now send `/start` and tap **💰 Open MyMoney** or the chat menu button. Use a private bot chat. The app must be opened through Telegram for authenticated API access. Ordinary browser access shows the layout and an instruction to open Telegram; it does not bypass login.
 
@@ -147,5 +156,13 @@ Tests cover signed authentication, expired/forged sessions, user ownership, crea
 7. ផ្ញើ `/start` ហើយចុចបើក MyMoney។ មិនចាំបាច់វាយ Command ដើម្បីកត់ចំណាយទេ។
 
 មិនទាន់ deploy ដោយស្វ័យប្រវត្តិទេ៖ អ្នកត្រូវបំពេញ Token, HTTPS URL និង Database របស់អ្នកជាមុន។
-#   m y m o n e y - t e l e g r a m - m i n i a p p  
- 
+
+## Admin approval behavior
+
+New users send /start and tap Request access, or send /request. The bot displays their own ID. An admin receives their name/ID and Approve/Reject buttons. Decisions are saved in the new access_requests table; existing transaction/budget tables are not altered. A deployment creates this new table automatically.
+
+Only ADMIN_USER_ID may approve or reject. Callback decisions apply only to pending requests; repeated/stale clicks cannot reverse them. Notifications for the same pending user are throttled to one per minute. If Telegram delivery fails, requests remain saved and the admin can use /requests to retrieve batches of five. Decisions remain saved even if a user blocks the notification; the user can reopen the app to check.
+
+Rejected users cannot automatically reapply in this release. The owner may deliberately add their ID to ALLOWED_USER_IDS to override the rejection. This release does not add a revocation UI. Admin access does not grant access to other users' expense history.
+
+When upgrading an existing deployment, re-register the webhook with allowed_updates including BOTH message and callback_query. The new setup script/Start Command handles this. A setWebhook success does not by itself prove delivery; inspect getWebhookInfo and service logs if /id does not respond.
