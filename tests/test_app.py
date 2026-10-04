@@ -522,8 +522,16 @@ def test_personal_debts_crud_proof_photo_and_user_isolation(client):
     identity=created.json['id']
     record=client.get('/api/debts',headers=headers()).json['debts'][0]
     assert record['person']=='Sokha' and record['amount']==2550 and record['status']=='open' and record['has_photo'] is False
+    history=client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']
+    assert len(history)==1 and history[0]['action']=='created' and history[0]['details']['after']['due_date']=='2026-12-01'
     assert client.get('/api/debts',headers=headers(uid=456)).json=={'debts':[]}
+    assert client.get(f'/api/debts/{identity}/history',headers=headers(uid=456)).status_code==404
     assert client.put(f'/api/debts/{identity}',json={**data,'person':'New name'},headers=headers(uid=456)).status_code==404
+    updated=client.put(f'/api/debts/{identity}',json={**data,'person':'Sokha Dara','due_date':'2026-12-15'},headers=headers())
+    assert updated.status_code==200
+    history=client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']
+    assert history[0]['action']=='updated' and history[0]['details']['before']['due_date']=='2026-12-01'
+    assert history[0]['details']['after']['due_date']=='2026-12-15' and 'due_date' in history[0]['details']['changed_fields']
     assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers(uid=456)).status_code==404
     image=io.BytesIO();Image.new('RGB',(40,40),'blue').save(image,format='PNG')
     photo_url=f'/api/debts/{identity}/photo'
@@ -536,6 +544,8 @@ def test_personal_debts_crud_proof_photo_and_user_isolation(client):
     assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers()).status_code==200
     assert client.get('/api/debts?status=settled',headers=headers()).json['debts'][0]['settled_at']
     assert client.put(f'/api/debts/{identity}/status',json={'status':'open'},headers=headers()).status_code==200
+    actions=[event['action'] for event in client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']]
+    assert 'settled' in actions and 'reopened' in actions and 'photo_attached' in actions
     assert client.put(f'/api/debts/{identity}',json={**data,'person':'Sokha'},headers=headers()).status_code==200
     assert client.delete(f'/api/debts/{identity}',headers=headers(uid=456)).status_code==404
     assert client.delete(f'/api/debts/{identity}',headers=headers()).status_code==200
