@@ -1,0 +1,151 @@
+# លុយខ្ញុំ · MyMoney Telegram Mini App
+
+A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bot webhook + responsive vanilla HTML/CSS/JavaScript. No frontend build step.
+
+## Included
+
+- Telegram menu and inline button to open the Mini App.
+- Khmer/English interface; mobile navigation, light/dark system theme.
+- Add income/expenses, category, cash/bank label, date and optional note.
+- Edit, confirmed delete, month/currency filters, history search and pagination.
+- Monthly income minus expenses, category bars, monthly budgets, in-app budget warnings.
+- KHR stored as integer riel; USD stored as integer cents. Totals stay separate.
+- CSV export of your own full history, with spreadsheet formula escaping.
+- Server-side Telegram initData signature/age verification, user allowlist, per-user data isolation.
+- Duplicate create retries reuse a request ID; SQLAlchemy supports SQLite and PostgreSQL.
+
+**Scope:** This version implements the core tracker. Savings goals, scheduled reminders, OCR, voice recognition, bank integration, account transfers and exchange-rate conversion are not included. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
+
+## 1. Create your Telegram bot
+
+1. Open the official `@BotFather` in Telegram and send `/newbot`.
+2. Choose its name and username. Keep the token private.
+3. Install Python 3.12+ and extract this ZIP. Open a terminal in `mymoney-miniapp`.
+
+### Windows PowerShell
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.venv\Scripts\python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+### macOS / Linux
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
+.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))'
+```
+
+Put the generated random string in `WEBHOOK_SECRET`. Edit `.env` with your own values:
+
+```dotenv
+BOT_TOKEN=your_botfather_token
+APP_URL=https://your-service.onrender.com
+WEBHOOK_SECRET=your_generated_random_secret
+ALLOWED_USER_IDS=your_numeric_telegram_id
+DATABASE_URL=postgresql://user:password@host/database
+```
+
+Multiple allowed IDs are comma-separated. An empty allowlist disables Mini App access. No credentials are included in this project. Never commit `.env`.
+
+## 2. Deploy to Render with PostgreSQL
+
+1. Put the extracted project files in your own GitHub repository (the directory containing `app.py` should be the service root).
+2. Create a PostgreSQL database with a provider of your choice. Copy its connection URL. Configure the provider's required TLS options, e.g. `?sslmode=require` when required.
+3. Create a Render **Web Service** from that repository.
+4. Build command: `pip install -r requirements.txt`
+5. Start command: `gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60`
+6. Add the five environment variables above. Set `APP_URL` to the actual public HTTPS service URL, without a trailing slash. Set `PYTHON_VERSION` to `3.12.14` if using the included blueprint.
+7. Health check path: `/health`. Deploy. Tables are created automatically for a new database.
+
+`render.yaml` is also provided for Blueprint deployment; fill its prompted values. The blueprint does not provision a database or choose a service plan. Check the provider's current plan pricing, idle/sleep behavior, storage retention and backup policy before choosing it.
+
+**Do not use SQLite on an ephemeral host filesystem.** Use external PostgreSQL for deployed data. SQLite is only the local default. CSV is an export, not a full database backup (budgets are excluded). Enable database backups and test restoration. Schema changes in later versions need migrations; `create_all` does not migrate existing tables.
+
+## 3. Connect Telegram to the deployed app
+
+On your computer, set `.env` to the same `BOT_TOKEN`, `APP_URL` and `WEBHOOK_SECRET` as the deployed service, then run:
+
+```powershell
+.venv\Scripts\python setup_bot.py
+```
+
+Linux/macOS: `.venv/bin/python setup_bot.py`.
+
+The script registers the webhook, chat menu button and `/start`, `/menu`, `/id` commands. It replaces any existing webhook for this bot; use a dedicated bot, and do not run a polling bot with the same token.
+
+**If you don't know your Telegram ID:** deploy initially with an empty `ALLOWED_USER_IDS`, run `setup_bot.py`, then send `/id` in your bot's private chat. Copy that numeric ID into Render's `ALLOWED_USER_IDS` environment variable and redeploy. The `/id` command works before access is allowed.
+
+Now send `/start` and tap **💰 Open MyMoney** or the chat menu button. Use a private bot chat. The app must be opened through Telegram for authenticated API access. Ordinary browser access shows the layout and an instruction to open Telegram; it does not bypass login.
+
+## 4. Everyday use
+
+1. Select the month and KHR or USD at the top.
+2. Tap Add expense or Add income, enter the amount, category and date, then Save.
+3. Tap any history row to edit it or delete after confirmation.
+4. Set a monthly budget for each currency from the Budget tab.
+5. Switch Khmer/English using the header button. Export all history from Settings.
+
+Dates use Asia/Phnom_Penh. Future transaction dates are rejected. The API accepts month filters from 2000 through 2100. Transactions may have up to 300 note characters. An app session expires after one hour; close and reopen it to refresh Telegram authentication. Authentication data is never stored in localStorage; only the language preference is.
+
+## Local development
+
+```powershell
+.venv\Scripts\python -m flask --app wsgi run --port 5000
+```
+
+Linux/macOS: `.venv/bin/python -m flask --app wsgi run --port 5000`.
+
+Use `DATABASE_URL=sqlite:///money.db` locally. For a real Telegram test, expose the local server through an HTTPS development tunnel, update `APP_URL`, and run `setup_bot.py` again. The repository does not include an authentication bypass. No live Telegram token is needed for automated tests.
+
+## Tests
+
+```powershell
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m pytest -q
+```
+
+Tests cover signed authentication, expired/forged sessions, user ownership, create retry deduplication, edit/delete, money precision, currency/month budget isolation, CSV escaping and webhook secret checks. PostgreSQL and live Telegram deployment require verification with your own service configuration.
+
+## Troubleshooting
+
+- **Access disabled:** send `/id`, set the correct numeric allowlist and redeploy.
+- **Session expired:** close and reopen the Mini App from the bot.
+- **Menu missing:** run `setup_bot.py`, reopen the private bot chat, send `/start`.
+- **Connection timeout:** check hosting health and database availability, then retry. A create retry within the same open form will not create another entry. After closing an uncertain form, check history before entering it again.
+- **Bot doesn't answer:** check webhook URL/secret agreement and Render logs. Token must match the bot you opened. Re-run setup after changing the URL.
+- **Amounts seem different:** check selected month and currency. Riel and dollars are intentionally not added together.
+
+## Files
+
+- `app.py`: API, database schema, Telegram authentication and webhook.
+- `wsgi.py`: web service entry point.
+- `setup_bot.py`: one-time Telegram registration.
+- `static/`: Mini App HTML, CSS and JavaScript.
+- `tests/test_app.py`: backend regression tests.
+- `.env.example`, `render.yaml`: configuration templates.
+
+## Official references
+
+- https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+- https://core.telegram.org/bots/api#setchatmenubutton
+- https://core.telegram.org/bots/api#setwebhook
+- https://render.com/docs/deploy-flask
+
+## ការដំឡើងសង្ខេបជាភាសាខ្មែរ
+
+1. បង្កើត Bot តាម `@BotFather` ហើយរក្សា Token ជាសម្ងាត់។
+2. Upload code ទៅ GitHub និងបង្កើត Render Web Service។
+3. បង្កើត PostgreSQL រួចបំពេញ `DATABASE_URL`។ កុំប្រើ SQLite លើ hosting ដែលលុបទិន្នន័យពេល redeploy។
+4. បំពេញ `BOT_TOKEN`, `APP_URL`, `WEBHOOK_SECRET` និង `ALLOWED_USER_IDS`។
+5. ដំឡើង dependencies លើកុំព្យូទ័រ បំពេញ `.env` ហើយ run `setup_bot.py`។
+6. បើមិនទាន់ដឹង Telegram ID ផ្ញើ `/id` ទៅ Bot បន្ទាប់ពី setup រួច។ បន្ថែមលេខនោះក្នុង `ALLOWED_USER_IDS` ហើយ redeploy។
+7. ផ្ញើ `/start` ហើយចុចបើក MyMoney។ មិនចាំបាច់វាយ Command ដើម្បីកត់ចំណាយទេ។
+
+មិនទាន់ deploy ដោយស្វ័យប្រវត្តិទេ៖ អ្នកត្រូវបំពេញ Token, HTTPS URL និង Database របស់អ្នកជាមុន។
+#   m y m o n e y - t e l e g r a m - m i n i a p p  
+ 
