@@ -16,3 +16,5 @@ Not verified: live Render/Neon, actual Telegram delivery/fullscreen, native phon
 After deployment, send /start, /closemenu and /menu, then verify your real phone's layout and create/edit/delete a disposable entry. Keep Neon DATABASE_URL unchanged.
 
 Latest feature validation: added tests for trash/restore/purge, photo authorization/validation and retention through restore, profile validation/isolation, category limits, previous-year monthly comparison and changes after restoration. Browser integration additionally exercised photo upload/display, restoration with its photo, profile saving and the 90% category warning at 320px. Tests use synthetic data only.
+
+Profile/UI iteration also covers personal favorite create/list/delete, twelve-favorite cap and client-side amount masking preference. Backend tests now total 47. Live browser automation is unavailable in this restricted run; the smoke script remains for local execution.

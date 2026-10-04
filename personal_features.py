@@ -12,6 +12,7 @@ def define_tables(metadata):
       'trash':Table('transaction_trash',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('snapshot',Text,nullable=False),Column('request_id',String(64),nullable=False),Column('deleted_at',BigInteger,nullable=False),UniqueConstraint('user_id','request_id')),
       'photos':Table('receipt_photos',metadata,Column('user_id',BigInteger,primary_key=True),Column('request_id',String(64),primary_key=True),Column('data',LargeBinary,nullable=False)),
       'profiles':Table('personal_profiles',metadata,Column('user_id',BigInteger,primary_key=True),Column('name',String(80),nullable=False),Column('bio',String(160),nullable=False)),
+      'favorites':Table('expense_favorites',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('title',String(60),nullable=False),Column('kind',String(10),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('account',String(20),nullable=False),Column('note',String(300),nullable=False)),
       'category_budgets':Table('category_budgets',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),UniqueConstraint('user_id','month','currency','category'))}
 
 def archive_rows(conn,rows,tables):
@@ -20,7 +21,7 @@ def archive_rows(conn,rows,tables):
         conn.execute(insert(tables['trash']).values(user_id=data['user_id'],snapshot=json.dumps(data),request_id=data['request_id'],deleted_at=int(time.time())))
 
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
-    trash,photos,profiles,limits=(tables[k] for k in ['trash','photos','profiles','category_budgets'])
+    trash,photos,profiles,limits,favorites=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites'])
     def upsert(table):
         if engine.dialect.name=='postgresql':
             from sqlalchemy.dialects.postgresql import insert as dialect_insert
@@ -117,6 +118,31 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     def remove_photo(identity):
         with engine.begin() as conn:
             row=owned_entry(conn,identity);conn.execute(delete(photos).where(photos.c.user_id==g.user['id'],photos.c.request_id==row['request_id']))
+        return {'ok':True}
+
+    @app.get('/api/favorites')
+    @auth
+    def favorites_get():
+        with engine.connect() as conn:rows=conn.execute(select(favorites).where(favorites.c.user_id==g.user['id']).order_by(favorites.c.id.desc())).mappings().all()
+        return {'favorites':[dict(r) for r in rows]}
+
+    @app.post('/api/favorites')
+    @auth
+    def favorites_add():
+        body=json_body();title=body.get('title');kind=body.get('kind');category=body.get('category');account=body.get('account');note=body.get('note','');currency=body.get('currency')
+        if not isinstance(title,str) or not title.strip() or len(title.strip())>60 or kind not in ('expense','income') or category not in categories or account not in ('cash','bank') or not isinstance(note,str) or len(note)>300:abort(400,'Check favorite details.')
+        amount=amount_units(body.get('amount'),currency)
+        with engine.begin() as conn:
+            count=conn.execute(select(func.count()).select_from(favorites).where(favorites.c.user_id==g.user['id'])).scalar_one()
+            if count>=12:abort(409,'You can save up to 12 favorites. Remove one to add another.')
+            identity=conn.execute(insert(favorites).values(user_id=g.user['id'],title=title.strip(),kind=kind,category=category,amount=amount,currency=currency,account=account,note=note.strip())).inserted_primary_key[0]
+        return {'id':identity},201
+
+    @app.delete('/api/favorites/<int:identity>')
+    @auth
+    def favorites_remove(identity):
+        with engine.begin() as conn:changed=conn.execute(delete(favorites).where(favorites.c.id==identity,favorites.c.user_id==g.user['id'])).rowcount
+        if not changed:abort(404,'Favorite not found')
         return {'ok':True}
 
     @app.get('/api/category-budgets')

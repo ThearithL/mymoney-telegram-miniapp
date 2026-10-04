@@ -207,3 +207,7 @@ Upload the full static folder, including design.js, design.css and history.js. T
 - Insights → Month comparison shows expense totals for the selected and previous calendar months, difference and percent change. Current-month comparisons are marked incomplete; a zero previous-month baseline shows no percentage.
 - Added subtle card, modal, chart and button animations. Device Reduce Motion disables animations.
 - Update all files, including personal_features.py and static/features.js, and reinstall requirements (Pillow is new). New tables are additive; no existing financial records are deleted by deployment.
+
+## Hide amounts and favorites
+
+The eye button in the header hides monetary values in the current browser until toggled back on; the choice is stored locally in that browser. It is a quick privacy aid for shoulder viewing, not a password lock. Up to 12 personal favorites can be saved from an entry form and launched from Home. A favorite fills a draft; review it and press Save to make a transaction. Removing a favorite does not delete transactions.

@@ -1,5 +1,5 @@
 """Optional integration check: install playwright==1.51.0 and its Chromium browser."""
-import hashlib,hmac,json,sys,tempfile,threading,time,uuid,io
+import hashlib,hmac,json,sys,tempfile,time,uuid,io
 from PIL import Image
 from pathlib import Path
 from urllib.parse import urlencode
@@ -7,11 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from app import create_app
-from werkzeug.serving import make_server,WSGIRequestHandler
 from playwright.sync_api import sync_playwright
-class Quiet(WSGIRequestHandler):
-    def log_request(self,*args): pass
-
 def wait_state(page, expression):
     for _ in range(100):
         if page.evaluate(expression): return
@@ -26,12 +22,11 @@ def auth(uid):
 
 with tempfile.TemporaryDirectory() as temp:
     app=create_app({'TESTING':True,'BOT_TOKEN':'123456:test-token','ADMIN_USER_ID':'123','ALLOWED_USER_IDS':'456','DATABASE_URL':'sqlite:///'+temp+'/ui.db'})
-    client=app.test_client();today=datetime.now(ZoneInfo('Asia/Phnom_Penh')).date().isoformat()
+    client=app.test_client();server_port=5000;today=datetime.now(ZoneInfo('Asia/Phnom_Penh')).date().isoformat()
     def add(category,amount,uid=123):
         response=client.post('/api/transactions',headers={'Authorization':'tma '+auth(uid)},json={'kind':'expense','currency':'KHR','amount':amount,'category':category,'account':'cash','day':today,'note':'Demo '+category,'request_id':uuid.uuid4().hex})
         assert response.status_code==201
     add('food','9000',456)
-    server=make_server('127.0.0.1',0,app,request_handler=Quiet);threading.Thread(target=server.serve_forever,daemon=True).start()
     mock='window.Telegram={WebApp:{initData:'+json.dumps(auth(123))+',ready(){},expand(){},isVersionAtLeast(){return true},requestFullscreen(){},onEvent(){},BackButton:{onClick(){},show(){},hide(){}}}};'
     try:
         with sync_playwright() as p:
@@ -41,7 +36,15 @@ with tempfile.TemporaryDirectory() as temp:
                 page=browser.new_page(viewport={'width':width,'height':height},reduced_motion='reduce');errors=[]
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('https://telegram.org/js/telegram-web-app.js',lambda r:r.fulfill(body=mock,content_type='application/javascript'))
-                page.goto(f'http://127.0.0.1:{server.server_port}')
+                page.route('http://app.test/**',lambda r:r.fulfill(body=(Path(__file__).resolve().parents[1]/('static/index.html' if r.request.url=='http://app.test/' else r.request.url.split('http://app.test/',1)[-1])).read_bytes(),content_type='text/html' if r.request.url=='http://app.test/' else ('text/javascript' if r.request.url.endswith('.js') else 'text/css')) if r.request.url=='http://app.test/' or '/static/' in r.request.url else api_route(r))
+                def api_route(route):
+                    req=route.request
+                    try:
+                        response=client.open(req.url.split(f'http://127.0.0.1:{server_port}',1)[-1],method=req.method,data=req.post_data,headers={'Authorization':req.headers.get('authorization',''),'Content-Type':req.headers.get('content-type','application/json')})
+                        route.fulfill(status=response.status,body=response.get_data(),content_type=response.content_type)
+                    except Exception as exc:route.fulfill(status=500,body=json.dumps({'error':str(exc)}),content_type='application/json')
+                page.route('**/api/**',api_route)
+                page.goto('http://app.test/')
                 wait_state(page, '() => state.user && state.transactions.length === 2')
                 page.locator('#bootLoader').wait_for(state='hidden')
                 assert page.locator('#openCalculator').count()==0
@@ -51,6 +54,17 @@ with tempfile.TemporaryDirectory() as temp:
                         page.locator('[data-page="'+name+'"]').click()
                         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),(width,name)
                     page.locator('#theme').select_option('dark' if language=='km' else 'light')
+                if width==320:
+                    page.locator('[data-page="home"]').click()
+                    page.locator('#addExpense').click();page.locator('#amount').fill('5000');page.locator('#note').fill('Favorite test')
+                    page.locator('#saveFavoriteFromEntry').click();page.locator('#favoriteTitle').fill('My snack')
+                    page.locator('#favoriteForm button.primary').click()
+                    wait_state(page,'() => document.querySelectorAll(".favorite-item").length === 1')
+                    page.locator('#favoriteDetails').evaluate('(e)=>e.open=true')
+                    page.locator('.favorite-use').click();assert page.locator('#amount').input_value()=='5000'
+                    page.locator('#closeDialog').click()
+                    page.locator('#privacyToggle').click();assert 'blur' in page.locator('#net').evaluate('(e)=>getComputedStyle(e).filter')
+                    page.locator('#privacyToggle').click();assert page.locator('#net').evaluate('(e)=>getComputedStyle(e).filter')=='none'
                 page.locator('[data-page="reports"]').click()
                 assert '66.7%' in page.locator('#donutPanel').inner_text()
                 assert '33.3%' in page.locator('#donutPanel').inner_text()
@@ -101,4 +115,4 @@ with tempfile.TemporaryDirectory() as temp:
                 print(f'PASS {width}x{height}: languages/themes, navigation, donut, edit, selected/all delete, isolation; no JS errors',flush=True)
                 page.close()
             browser.close()
-    finally: server.shutdown()
+    finally: pass

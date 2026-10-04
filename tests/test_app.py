@@ -457,3 +457,26 @@ def test_photo_size_and_json_limit(client):
     identity=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
     assert client.put(f'/api/transactions/{identity}/photo',data=b'x'*(2*1024*1024+1),headers=headers()).status_code==400
     assert client.put('/api/profile',json={'name':'x','bio':'x'*17000},headers=headers()).status_code==413
+
+
+def test_favorites_crud_is_scoped_and_validated(client):
+    assert client.get('/api/favorites',headers=headers()).json=={'favorites':[]}
+    favorite={'title':'Morning coffee','kind':'expense','category':'coffee','amount':'2.50','currency':'USD','account':'cash','note':'Latte'}
+    assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==201
+    saved=client.get('/api/favorites',headers=headers()).json['favorites']
+    assert len(saved)==1 and saved[0]['amount']==250
+    assert client.get('/api/favorites',headers=headers(456)).json['favorites']==[]
+    identity=saved[0]['id']
+    assert client.delete(f'/api/favorites/{identity}',headers=headers(456)).status_code==404
+    assert client.delete(f'/api/favorites/{identity}',headers=headers()).status_code==200
+    assert client.get('/api/favorites',headers=headers()).json['favorites']==[]
+    assert client.post('/api/favorites',json={**favorite,'title':' '},headers=headers()).status_code==400
+    assert client.post('/api/favorites',json={**favorite,'category':'salary'},headers=headers()).status_code==201
+
+
+def test_favorite_limit(client):
+    for index in range(12):
+        favorite={'title':f'Favorite {index}','kind':'expense','category':'food','amount':'10','currency':'KHR','account':'cash','note':''}
+        assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==201
+    favorite={'title':'Thirteenth','kind':'expense','category':'food','amount':'10','currency':'KHR','account':'cash','note':''}
+    assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==409
