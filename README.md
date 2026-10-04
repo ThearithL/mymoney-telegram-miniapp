@@ -15,7 +15,7 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
 - Fullscreen request with safe-area spacing on supported Telegram clients.
 - Khmer/English interface; mobile navigation, light/dark system theme.
-- Add income/expenses, built-in or personal categories, cash/bank label, date and optional note. Create up to 40 personal categories for income, expenses or both; rename or delete them in Settings. Deletion is blocked while a category is attached to saved data.
+- Add income/expenses, built-in or personal categories, cash/bank label, date and optional note. Track personal borrowing/lending with due dates, paid status and private proof photos. Create up to 40 personal categories for income, expenses or both; rename or delete them in Settings. Deletion is blocked while a category is attached to saved data.
 - Edit, confirmed delete, month/currency filters, history search and pagination.
 - Monthly income minus expenses, category bars, monthly budgets, in-app budget warnings.
 - KHR is stored as whole riel and USD as cents. The dashboard, history, charts, summaries and comparison combine both currencies using your saved display rate; each entry remains stored in its original currency. The default display rate is 4,000 KHR/USD and can be edited in Settings.

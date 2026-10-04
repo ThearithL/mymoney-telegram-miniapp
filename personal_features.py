@@ -3,7 +3,7 @@ import io,json,time,uuid,warnings
 from datetime import date,datetime
 from zoneinfo import ZoneInfo
 from flask import abort,g,request,Response
-from sqlalchemy import Table,Column,Integer,BigInteger,String,Text,LargeBinary,Numeric,UniqueConstraint,select,insert,delete,func
+from sqlalchemy import Table,Column,Integer,BigInteger,String,Text,LargeBinary,Numeric,Date,UniqueConstraint,select,insert,delete,update,func
 from PIL import Image,ImageOps,UnidentifiedImageError
 TZ=ZoneInfo('Asia/Phnom_Penh')
 
@@ -14,6 +14,8 @@ def define_tables(metadata):
       'profiles':Table('personal_profiles',metadata,Column('user_id',BigInteger,primary_key=True),Column('name',String(80),nullable=False),Column('bio',String(160),nullable=False)),
       'fx':Table('currency_display_settings',metadata,Column('user_id',BigInteger,primary_key=True),Column('base_currency',String(3),nullable=False),Column('rate_khr_per_usd',Numeric(12,4),nullable=False)),
       'custom_categories':Table('custom_categories',metadata,Column('user_id',BigInteger,primary_key=True),Column('key',String(20),primary_key=True),Column('name',String(40),nullable=False),Column('kind',String(10),nullable=False)),
+      'debts':Table('personal_debts',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('direction',String(8),nullable=False),Column('person',String(80),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('note',String(300),nullable=False),Column('due_date',Date,nullable=True),Column('created_at',Date,nullable=False),Column('status',String(10),nullable=False),Column('settled_at',Date,nullable=True)),
+      'debt_photos':Table('personal_debt_photos',metadata,Column('debt_id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('data',LargeBinary,nullable=False)),
       'favorites':Table('expense_favorites',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('title',String(60),nullable=False),Column('kind',String(10),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('account',String(20),nullable=False),Column('note',String(300),nullable=False)),
       'category_budgets':Table('category_budgets',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),UniqueConstraint('user_id','month','currency','category'))}
 
@@ -23,7 +25,7 @@ def archive_rows(conn,rows,tables):
         conn.execute(insert(tables['trash']).values(user_id=data['user_id'],snapshot=json.dumps(data),request_id=data['request_id'],deleted_at=int(time.time())))
 
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
-    trash,photos,profiles,limits,favorites,fx,custom_categories=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories'])
+    trash,photos,profiles,limits,favorites,fx,custom_categories,debts,debt_photos=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories','debts','debt_photos'])
     def category_allowed(key,kind=None):
         if key in categories:return kind is None or kind in ('expense','income')
         with engine.connect() as conn:row=conn.execute(select(custom_categories.c.kind).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key)).scalar_one_or_none()
@@ -172,6 +174,106 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     def remove_photo(identity):
         with engine.begin() as conn:
             row=owned_entry(conn,identity);conn.execute(delete(photos).where(photos.c.user_id==g.user['id'],photos.c.request_id==row['request_id']))
+        return {'ok':True}
+
+    def debt_fields(body):
+        direction=body.get('direction');person=body.get('person');currency=body.get('currency');note=body.get('note','');raw_due=body.get('due_date') or None
+        if direction not in ('borrowed','lent') or not isinstance(person,str) or not 1<=len(person.strip())<=80 or not isinstance(note,str) or len(note)>300:abort(400,'Check the person, direction and note (up to 300 characters).')
+        due_date=None
+        if raw_due is not None:
+            try:due_date=date.fromisoformat(raw_due)
+            except (TypeError,ValueError):abort(400,'Enter a valid due date.')
+            if due_date.year<2000:abort(400,'Enter a valid due date.')
+        return {'direction':direction,'person':person.strip(),'amount':amount_units(body.get('amount'),currency),'currency':currency,'note':note.strip(),'due_date':due_date}
+
+    def owned_debt(conn,identity):
+        row=conn.execute(select(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id'])).mappings().first()
+        if row is None:abort(404,'Debt record not found.')
+        return row
+
+    @app.get('/api/debts')
+    @auth
+    def debts_get():
+        status=request.args.get('status','all')
+        if status not in ('all','open','settled'):abort(400,'Choose a valid debt filter.')
+        query=select(debts).where(debts.c.user_id==g.user['id'])
+        if status!='all':query=query.where(debts.c.status==status)
+        query=query.order_by(debts.c.status.asc(),debts.c.due_date.asc().nulls_last(),debts.c.created_at.desc(),debts.c.id.desc())
+        with engine.connect() as conn:
+            rows=conn.execute(query).mappings().all()
+            photo_ids=set(conn.execute(select(debt_photos.c.debt_id).where(debt_photos.c.user_id==g.user['id'])).scalars().all())
+        result=[]
+        for row in rows:
+            item=dict(row);item['due_date']=item['due_date'].isoformat() if item['due_date'] else None;item['created_at']=item['created_at'].isoformat();item['settled_at']=item['settled_at'].isoformat() if item['settled_at'] else None;item['has_photo']=item['id'] in photo_ids;result.append(item)
+        return {'debts':result}
+
+    @app.post('/api/debts')
+    @auth
+    def debts_add():
+        values=debt_fields(json_body())|{'user_id':g.user['id'],'created_at':datetime.now(TZ).date(),'status':'open','settled_at':None}
+        with engine.begin() as conn:identity=conn.execute(insert(debts).values(**values)).inserted_primary_key[0]
+        return {'id':identity},201
+
+    @app.put('/api/debts/<int:identity>')
+    @auth
+    def debts_update(identity):
+        values=debt_fields(json_body())
+        with engine.begin() as conn:
+            row=owned_debt(conn,identity)
+            conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(**values))
+        return {'id':identity,'status':row['status']}
+
+    @app.put('/api/debts/<int:identity>/status')
+    @auth
+    def debts_status(identity):
+        status=json_body().get('status')
+        if status not in ('open','settled'):abort(400,'Choose open or settled status.')
+        with engine.begin() as conn:
+            owned_debt(conn,identity)
+            conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status=status,settled_at=datetime.now(TZ).date() if status=='settled' else None))
+        return {'ok':True,'status':status}
+
+    @app.delete('/api/debts/<int:identity>')
+    @auth
+    def debts_remove(identity):
+        with engine.begin() as conn:
+            owned_debt(conn,identity)
+            conn.execute(delete(debt_photos).where(debt_photos.c.debt_id==identity,debt_photos.c.user_id==g.user['id']))
+            conn.execute(delete(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']))
+        return {'ok':True}
+
+    @app.get('/api/debts/<int:identity>/photo')
+    @auth
+    def debt_photo_get(identity):
+        with engine.connect() as conn:
+            owned_debt(conn,identity)
+            data=conn.execute(select(debt_photos.c.data).where(debt_photos.c.debt_id==identity,debt_photos.c.user_id==g.user['id'])).scalar_one_or_none()
+        if data is None:abort(404,'No proof photo attached.')
+        return Response(data,mimetype='image/jpeg',headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+
+    @app.put('/api/debts/<int:identity>/photo')
+    @auth
+    def debt_photo_put(identity):
+        with engine.connect() as conn:owned_debt(conn,identity)
+        raw=request.get_data()
+        if not raw or len(raw)>2*1024*1024:abort(400,'Choose a JPEG, PNG or WebP image up to 2 MB.')
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('error',Image.DecompressionBombWarning)
+                with Image.open(io.BytesIO(raw)) as source:
+                    if source.format not in ('JPEG','PNG','WEBP') or getattr(source,'is_animated',False) or source.width*source.height>20_000_000:raise ValueError()
+                    source.load();photo=ImageOps.exif_transpose(source).convert('RGB');photo.thumbnail((1600,1600));output=io.BytesIO();photo.save(output,format='JPEG',quality=85)
+        except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError,Image.DecompressionBombWarning):abort(400,'Invalid image. Use a non-animated JPEG, PNG or WebP up to 20 megapixels.')
+        with engine.begin() as conn:
+            owned_debt(conn,identity);data=output.getvalue()
+            conn.execute(upsert(debt_photos).values(debt_id=identity,user_id=g.user['id'],data=data).on_conflict_do_update(index_elements=['debt_id'],set_={'user_id':g.user['id'],'data':data}))
+        return {'ok':True}
+
+    @app.delete('/api/debts/<int:identity>/photo')
+    @auth
+    def debt_photo_remove(identity):
+        with engine.begin() as conn:
+            owned_debt(conn,identity);conn.execute(delete(debt_photos).where(debt_photos.c.debt_id==identity,debt_photos.c.user_id==g.user['id']))
         return {'ok':True}
 
     @app.get('/api/fx')

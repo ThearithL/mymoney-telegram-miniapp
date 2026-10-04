@@ -511,3 +511,34 @@ def test_custom_categories_crud_ownership_and_transaction_use(client):
     assert client.put('/api/category-budgets',json={'month':'2026-01','currency':'KHR','category':income['key'],'amount':'20'},headers=headers()).status_code==400
     assert client.delete('/api/categories/'+income['key'],headers=headers()).status_code==200
     assert client.post('/api/categories',json={'name':'  ','kind':'both'},headers=headers()).status_code==400
+
+
+def test_personal_debts_crud_proof_photo_and_user_isolation(client):
+    import io
+    from PIL import Image
+    data={'direction':'lent','person':'Sokha','amount':'25.50','currency':'USD','due_date':'2026-12-01','note':'Dinner share'}
+    created=client.post('/api/debts',json=data,headers=headers())
+    assert created.status_code==201
+    identity=created.json['id']
+    record=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert record['person']=='Sokha' and record['amount']==2550 and record['status']=='open' and record['has_photo'] is False
+    assert client.get('/api/debts',headers=headers(uid=456)).json=={'debts':[]}
+    assert client.put(f'/api/debts/{identity}',json={**data,'person':'New name'},headers=headers(uid=456)).status_code==404
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers(uid=456)).status_code==404
+    image=io.BytesIO();Image.new('RGB',(40,40),'blue').save(image,format='PNG')
+    photo_url=f'/api/debts/{identity}/photo'
+    assert client.put(photo_url,data=image.getvalue(),content_type='image/png',headers=headers(uid=456)).status_code==404
+    assert client.put(photo_url,data=image.getvalue(),content_type='image/png',headers=headers()).status_code==200
+    photo=client.get(photo_url,headers=headers())
+    assert photo.status_code==200 and photo.mimetype=='image/jpeg'
+    assert client.get(photo_url,headers=headers(uid=456)).status_code==404
+    assert client.get('/api/debts?status=settled',headers=headers()).json['debts']==[]
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers()).status_code==200
+    assert client.get('/api/debts?status=settled',headers=headers()).json['debts'][0]['settled_at']
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'open'},headers=headers()).status_code==200
+    assert client.put(f'/api/debts/{identity}',json={**data,'person':'Sokha'},headers=headers()).status_code==200
+    assert client.delete(f'/api/debts/{identity}',headers=headers(uid=456)).status_code==404
+    assert client.delete(f'/api/debts/{identity}',headers=headers()).status_code==200
+    assert client.get(photo_url,headers=headers()).status_code==404
+    assert client.post('/api/debts',json={**data,'direction':'other'},headers=headers()).status_code==400
+    assert client.post('/api/debts',json={**data,'person':' '},headers=headers()).status_code==400

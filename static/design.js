@@ -18,7 +18,7 @@ const iconPaths={
  bills:'M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8',
  study:'m2 8 10-5 10 5-10 5ZM6 10v7c4 3 8 3 12 0v-7M22 8v9',
  health:'M9 3h6v6h6v6h-6v6H9v-6H3V9h6Z',
- other:'M5 12h.01M12 12h.01M19 12h.01',salary:'M3 7h18v14H3ZM8 7V3h8v4M3 12h18m-11 0v3h4v-3'
+ other:'M5 12h.01M12 12h.01M19 12h.01',debt:'M4 5h16v15H4Zm3 4h10m-10 4h10m-10 4h5M7 2v3m10-3v3',salary:'M3 7h18v14H3ZM8 7V3h8v4M3 12h18m-11 0v3h4v-3'
 };
 function uiIcon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');for(const [k,v] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.65','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(k,v);const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',iconPaths[name]||iconPaths.other);svg.append(path);return svg;}
 document.querySelectorAll('[data-ui-icon]').forEach(el=>el.replaceChildren(uiIcon(el.dataset.uiIcon)));
