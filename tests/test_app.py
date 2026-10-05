@@ -150,6 +150,30 @@ def test_regular_user_cannot_manage_admins(access_client):
     assert client.put('/api/admin/users/456/access',headers=headers(uid=456),
         json={'status':'approved','confirm':True}).status_code==403
 
+def test_recent_activity_button_and_command_are_private_and_show_latest_five(access_client):
+    client,calls,_=access_client
+    for uid, note, amount in [(123, f'Owner record {i}', str(i + 1)) for i in range(6)]:
+        record=payload(note=note,amount=amount,day='2026-10-05',request_id=f'owner-recent-{i}')
+        assert client.post('/api/transactions',headers=headers(uid=uid),json=record).status_code==201
+    from app import insert, transactions
+    with client.application.extensions['engine'].begin() as conn:
+        conn.execute(insert(transactions).values(user_id=456,kind='expense',amount=1000,
+            currency='USD',category='food',spending_type='essential',account='cash',
+            note='Other user secret',day='2026-10-05',request_id='other-recent'))
+
+    assert message(client,123,'/start').status_code==200
+    keyboards=[p['reply_markup']['keyboard'] for _,p in calls if 'keyboard' in p.get('reply_markup',{})]
+    assert any('🕘 ប្រតិបត្តិការថ្មីៗ / Recent activity' in str(rows) for rows in keyboards)
+    calls.clear()
+    assert message(client,123,'/recent').status_code==200
+    recent=[p['text'] for _,p in calls if p.get('text','').startswith('🕘 Recent activity')]
+    assert len(recent)==1
+    assert 'Owner record 5' in recent[0] and 'Owner record 1' in recent[0]
+    assert 'Owner record 0' not in recent[0] and 'Other user secret' not in recent[0]
+    calls.clear()
+    assert callback(client,123,'recent').status_code==200
+    assert any(p.get('text','').startswith('🕘 Recent activity') for _,p in calls)
+
 def test_expense_need_want_and_yearly_summary(client):
     essential=payload(request_id='essential-123',amount='25',spending_type='essential')
     wanted=payload(request_id='want-entry-123',amount='10',category='coffee',spending_type='want',day='2026-02-03')

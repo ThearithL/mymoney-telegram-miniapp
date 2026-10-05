@@ -35,6 +35,7 @@ commands = [
     {'command':'id','description':'Show my Telegram ID'},
     {'command':'request','description':'Request access'},
     {'command':'summary','description':'My income and expense summary'},
+    {'command':'recent','description':'Show my latest five transactions'},
     {'command':'allowance','description':'See how much I can spend per day'},
     {'command':'yearly','description':'View my yearly income and expenses'},
     {'command':'budget','description':'Set my monthly expense limit'},

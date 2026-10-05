@@ -210,6 +210,7 @@ def create_app(config=None):
                 [{'text': '➕ ចំណាយ / Expense'}, {'text': '💵 ចំណូល / Income'}],
                 [{'text': '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report'}, {'text': '⚙️ ថវិកាប្រចាំខែ / Monthly budget'}],
                 [{'text': '🎯 គោលដៅសន្សំ / Savings goals'}],
+                [{'text': '🕘 ប្រតិបត្តិការថ្មីៗ / Recent activity'}],
                 [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
         if is_admin_user(uid):
             rows.append([{'text': '🛡 Admin'}])
@@ -269,7 +270,25 @@ def create_app(config=None):
             {'text': 'សប្ដាហ៍ / Week', 'callback_data': 'summary:week'},
             {'text': 'ខែ / Month', 'callback_data': 'summary:month'}],
             [{'text': '💸 ថ្ងៃនេះអាចចាយ / Spendable today', 'callback_data': 'summary:allowance'}],
+            [{'text': '🕘 Recent activity', 'callback_data': 'recent'}],
             [{'text': '📈 ក្រាហ្វ / Charts', 'web_app': {'url': app.config['APP_URL']}}]]}}
+
+    def personal_recent(uid):
+        """Show only the requesting user's latest five transactions in private chat."""
+        with engine.connect() as conn:
+            rows = conn.execute(select(transactions).where(
+                transactions.c.user_id == uid
+            ).order_by(transactions.c.day.desc(), transactions.c.id.desc()).limit(5)).mappings().all()
+        if not rows:
+            text = '🕘 Recent activity\n\nNo transactions yet. Tap Add Expense or Add Income in MyMoney to get started.'
+        else:
+            lines = ['🕘 Recent activity · Latest 5']
+            for row in rows:
+                label = 'Expense' if row['kind'] == 'expense' else 'Income'
+                title = (row['note'] or row['category'] or 'Transaction').replace('\n', ' ').strip()[:70]
+                lines.append(f"\n{row['day']} · {label}\n{title} · {display_money(row['amount'], row['currency'])}")
+            text = '\n'.join(lines)
+        return {'text': text, 'reply_markup': open_buttons()}
 
     def budget_warning(uid, month, currency):
         # Notifications only concern the current month, never historical imports.
@@ -943,6 +962,11 @@ def create_app(config=None):
                 telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': 'Use your private bot chat.'})
                 return {'ok': True}
             remember_user(user)
+            if action == 'recent':
+                telegram('answerCallbackQuery', {'callback_query_id': callback_id})
+                payload = personal_recent(uid) if has_access(uid) else {'text': '🔒 Send /request to request access.'}
+                telegram('sendMessage', {'chat_id': uid, **payload})
+                return {'ok': True}
             if action.startswith('summary:'):
                 telegram('answerCallbackQuery', {'callback_query_id': callback_id})
                 period = action.split(':', 1)[1]
@@ -1008,6 +1032,7 @@ def create_app(config=None):
             '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report':'/yearly',
             '⚙️ ថវិកាប្រចាំខែ / Monthly budget':'/budget',
             '🎯 គោលដៅសន្សំ / Savings goals':'/goals',
+            '🕘 ប្រតិបត្តិការថ្មីៗ / Recent activity':'/recent',
             '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
             '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
         command = aliases.get(raw, raw.split(' ')[0].split('@')[0])
@@ -1026,6 +1051,7 @@ def create_app(config=None):
                 '/request — Request access if your account is not approved\n'
                 '/id — Show your Telegram ID\n'
                 '/summary — Show this month’s income and expenses\n'
+                '/recent — Show your latest five transactions\n'
                 '/allowance — Show your suggested daily spending amount\n'
                 '/yearly — Open the yearly report\n'
                 '/budget — Open monthly budget settings\n'
@@ -1092,6 +1118,8 @@ def create_app(config=None):
             payload['reply_markup'] = {'inline_keyboard': [[{'text':'🔓 Request access','callback_data':'request_access'}]]}
         elif command == '/summary':
             payload.update(personal_summary(uid, 'month'))
+        elif command == '/recent':
+            payload.update(personal_recent(uid))
         elif command == '/allowance':
             payload.update(personal_summary(uid, 'allowance'))
         elif command in ('/open','/expense','/income','/budget','/yearly','/goals'):
