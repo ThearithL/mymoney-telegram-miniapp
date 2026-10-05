@@ -91,25 +91,6 @@ def test_expense_need_want_and_yearly_summary(client):
 def test_reject_invalid_expense_spending_type(client):
     data=payload(spending_type='sometimes')
     assert client.post('/api/transactions',json=data,headers=headers()).status_code==400
-    data['request_id']='unclassified-entry-123'
-    data['spending_type']='none'
-    assert client.post('/api/transactions',json=data,headers=headers()).status_code==201
-    record=client.get('/api/data?month=2026-01',headers=headers()).json['transactions'][0]
-    assert record['spending_type']=='none'
-
-def test_monthly_needs_and_wants_limits_update_and_are_private(client):
-    endpoint='/api/spending-budgets'
-    body={'month':'2026-01','currency':'USD','spending_type':'essential','amount':'80'}
-    assert client.put(endpoint,json=body,headers=headers()).json=={
-        'ok':True,'month':'2026-01','currency':'USD','spending_type':'essential','amount':8000}
-    body['amount']='95.50'
-    assert client.put(endpoint,json=body,headers=headers()).json['amount']==9550
-    data=client.get('/api/data?month=2026-01',headers=headers()).json
-    assert data['spending_budgets'][0]['amount']==9550
-    assert client.get('/api/data?month=2026-01',headers=headers(uid=456)).json['spending_budgets']==[]
-    assert client.delete(endpoint,json={'month':'2026-01','currency':'USD','spending_type':'essential'},headers=headers()).status_code==200
-    assert client.get('/api/data?month=2026-01',headers=headers()).json['spending_budgets']==[]
-    assert client.put(endpoint,json={**body,'spending_type':'other'},headers=headers()).status_code==400
 
 def test_csv_formula_safety_and_ownership(client):
     data=payload();data['note']='=HYPERLINK("evil")'

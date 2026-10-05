@@ -10,7 +10,6 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Light/dark/system themes, quick-entry drafts, loading animations and retry messages.
 - Budget alerts at 80% and 100% in app and Telegram.
 - Set a monthly expense cap for the selected month and display currency; update it any time, with an in-app progress bar and Telegram warning.
-- Set separate monthly spending caps for needs and wants; each shows a progress bar and an in-app warning near or over the limit.
 - Mark each expense as a need or a want. See the split for the selected month and year.
 - Yearly report: income, expenses, net, top spending category, needs/wants split and month-by-month chart. USD/KHR are combined with the saved display rate.
 - Telegram menu shortcuts open the monthly budget, yearly report and savings goals directly.
