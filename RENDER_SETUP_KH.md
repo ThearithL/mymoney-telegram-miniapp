@@ -55,8 +55,38 @@ Admin → ទទួលឈ្មោះ និង ID → ចុច `Approve` ឬ `
 
 Neon រក្សាទុកសិទ្ធិ និងទិន្នន័យក្រៅ Render។ Render Free នៅតែអាច sleep ហើយ Bot អាចឆ្លើយយឺតពេលភ្ញាក់ឡើងវិញ។
 
+## ជួយកុំឱ្យ Render Free sleep
+
+Project មាន health URL រួចហើយ៖ `https://mymoney-telegram-miniapp.onrender.com/health`។ វាត្រឡប់ HTTP 200 និង `{"ok": true}`។ Render health check មិនអាចទប់ការគេងរបស់ Free service បានទេ។
+
+ដើម្បីសាកល្បង keep-alive ដោយមិនចាំបាច់បង់ប្រាក់៖
+
+1. បង្កើត monitor ប្រភេទ **HTTP(s)** នៅសេវា uptime monitor ខាងក្រៅ ដូចជា UptimeRobot Free។
+2. ដាក់ URL `https://mymoney-telegram-miniapp.onrender.com/health` និង interval **5 minutes**។
+3. រក្សាទុក monitor ហើយពិនិត្យថាស្ថានភាពបង្ហាញ **Up**។
+
+Request ខាងក្រៅរៀងរាល់ 5 នាទីអាចជួយកុំឱ្យ Render មើលឃើញថា service គ្មាន traffic 15 នាទី។ វាជា workaround ប៉ុណ្ណោះ៖ Render អាច restart Free service បានគ្រប់ពេល ហើយមិនមានការធានា uptime 24/24 ទេ។
+
 ## Update ថ្មី
 
 Upload ឯកសារទាំងអស់ក្នុង ZIP ជំនួសកូដចាស់ រួមទាំង admin_panel.py និង static ទាំងមូល។ រក្សា DATABASE_URL របស់ Neon ដដែល។ Deploy រួចផ្ញើ /start ហើយ /admin ពីគណនីម្ចាស់។
 
 សារព្រមានថវិកា 80% និង 100% ផ្ញើពេលរក្សាទុកចំណាយ ឬថវិកាសម្រាប់ខែបច្ចុប្បន្ន។ មិនមែនជាសារផ្ញើតាមម៉ោងដោយស្វ័យប្រវត្តិទេ។
+
+## កំណែ UI / ក្រាហ្វរង្វង់ / លុបច្រើន
+
+Upload ឯកសារទាំងអស់ រួមទាំង static/design.js, design.css និង history.js។ ម៉ាស៊ីនគិតលេខត្រូវបានដកចេញ។
+
+History → ជ្រើសរើស → ជ្រើសកំណត់ត្រា → លុបដែលបានជ្រើស។ «លុបកំណត់ត្រារបស់ខ្ញុំទាំងអស់» លុបចំណូលនិងចំណាយគ្រប់ខែ គ្រប់រូបិយប័ណ្ណរបស់អ្នក។ ត្រូវវាយ DELETE មុនបញ្ជាក់។ ថវិកានិងគោលដៅសន្សំនៅដដែល។ ការលុបផ្លាស់ទៅធុងសំរាម ហើយអាចស្ដារវិញបានតាម Settings → ធុងសំរាម។
+
+ក្រាហ្វរង្វង់ និងក្រាហ្វប្រចាំថ្ងៃនៅ Menu របាយការណ៍។ កំណត់ថវិកាតាមប៊ូតុង «កំណត់» នៅកាតថវិកាទំព័រដើម។
+
+## Profile / ស្ដារ / រូបបង្កាន់ដៃ
+
+Upload កូដទាំងអស់ រួមទាំង personal_features.py និង static/features.js។ Build Command នៅតែ pip install -r requirements.txt (មាន Pillow ថ្មី)។
+
+Settings → Profile៖ កែឈ្មោះ និងព័ត៌មានខ្លី។ Settings → ធុងសំរាម៖ ស្ដារ ឬលុបជាអចិន្ត្រៃយ៍។ ចុចកំណត់ត្រាចំណាយ → ជ្រើសរូប → រក្សាទុករូប (JPEG/PNG/WebP ≤ 2 MB)។ រូបនៅក្នុង Neon។
+
+Home → ថវិកា → កំណត់៖ បន្ថែមថវិកាតាមប្រភេទ។ របាយការណ៍ → ប្រៀបធៀបខែ៖ ខែនេះមិនទាន់ចប់ នឹងមានសម្គាល់ច្បាស់។
+
+Header រូបភ្នែក៖ បិទបាំងចំនួនប្រាក់ក្នុង Browser នេះ។ ចំណូលចិត្ត៖ កត់ចំណាយញឹកញាប់បានរហ័ស រហូតដល់ 12 គំរូ។ គំរូបំពេញ Draft មុន—អ្នកអាចពិនិត្យ ឬកែចំនួន មុនចុចរក្សាទុក។

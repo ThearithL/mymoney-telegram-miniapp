@@ -1,14 +1,20 @@
 # Validation — 2026-10-04
 
-- 33 pytest cases passed using isolated SQLite databases.
-- JavaScript syntax passed node --check.
-- Chromium mobile viewport 390x844: signed Telegram data simulated; actual local Flask APIs used. Expense creation, savings goal creation, theme/language switching and home navigation succeeded, without JavaScript errors or horizontal overflow. Chart rendered with saved expense data. Error/retry screen also rendered on a simulated database failure.
-- Browser environment lacked Khmer/emoji fonts; device font rendering needs a real phone check.
+## Current build
 
-Not verified: live Telegram delivery/fullscreen, live Neon PostgreSQL, Render deployment, and real phone interaction. Telegram HTTP calls in backend tests are mocked.
+- 45 pytest tests passed using isolated SQLite databases. Includes auth, per-user ownership, money precision, idempotency, approval/revocation, goals, summary periods, budget alerts, Telegram menu open/close and bulk deletion.
+- Bulk deletion tests cover missing auth, foreign entries, wrong confirmation, foreign tokens, expiry, single use, replaced previews and preservation of later entries/goals.
+- Browser test source: tests/ui_smoke.py. Uses simulated signed Telegram initData and a real local Flask API with temporary SQLite. No real Telegram or user data is modified.
+- Browser matrix: 320x568, 360x800, 390x844, 768x1024, 844x390, 1280x800, 1920x1080. Both interface languages, light/dark themes, navigation, donut percentages, edit, selected deletion, cancel confirmation, delete-all and another user's data isolation are exercised.
+- Calculator UI was removed.
 
-Tests include auth, ownership, money precision, request deduplication, webhook secret, approval/revocation permissions, stale callbacks, admin views, savings goal version conflicts, period summaries and budget alert thresholds/delivery failures.
+To rerun backend: pip install -r requirements-dev.txt; python -m pytest -q.
+Optional browser check: pip install playwright==1.51.0; python -m playwright install chromium; python tests/ui_smoke.py.
 
-After deployment: send /id, configure ADMIN_USER_ID, send /start and /admin; verify access requests from another account, KHR/USD records, budgets and notifications, goals, export and persistence after restarting the service.
+Not verified: live Render/Neon, actual Telegram delivery/fullscreen, native phone keyboards and iOS WebKit. Khmer glyph rendering depends on device fonts; the browser environment does not include Khmer fonts.
 
-Personal update: browser checked calculator precedence, parentheses, invalid expressions, division by zero, transfer to unsaved expense, receipt detail/edit and owner display name. Menu close/reopen regression test passed with mocked Telegram HTTP.
+After deployment, send /start, /closemenu and /menu, then verify your real phone's layout and create/edit/delete a disposable entry. Keep Neon DATABASE_URL unchanged.
+
+Latest feature validation: added tests for trash/restore/purge, photo authorization/validation and retention through restore, profile validation/isolation, category limits, previous-year monthly comparison and changes after restoration. Browser integration additionally exercised photo upload/display, restoration with its photo, profile saving and the 90% category warning at 320px. Tests use synthetic data only.
+
+Profile/UI iteration also covers personal favorite create/list/delete, twelve-favorite cap and client-side amount masking preference. Backend tests now total 47. Live browser automation is unavailable in this restricted run; the smoke script remains for local execution.

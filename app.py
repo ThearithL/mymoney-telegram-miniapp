@@ -16,9 +16,10 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, abort, g, jsonify, request, send_from_directory, Response
 from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInteger,
-                        String, Date, UniqueConstraint, select, insert, update, delete, func)
+                        String, Text, Date, UniqueConstraint, select, insert, update, delete, func)
 from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
+from personal_features import define_tables, register_features, archive_rows
 
 load_dotenv()
 CATEGORIES = ['food', 'coffee', 'transport', 'shopping', 'bills', 'study', 'health', 'other', 'salary']
@@ -66,6 +67,13 @@ budget_alerts = Table('budget_alerts', metadata,
     Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),
     Column('level',Integer,nullable=False),UniqueConstraint('user_id','month','currency','level'))
 
+
+delete_batches = Table('delete_batches', metadata,
+    Column('token', String(32), primary_key=True), Column('user_id', BigInteger, nullable=False),
+    Column('ids_json', Text, nullable=False), Column('expires_at', BigInteger, nullable=False))
+
+
+personal_tables = define_tables(metadata)
 
 def validate_init_data(raw, token, now=None):
     """Never trust initDataUnsafe or a user ID from a request body."""
@@ -119,7 +127,7 @@ def create_app(config=None):
                       WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET', ''),
                       ALLOWED_USER_IDS=os.getenv('ALLOWED_USER_IDS', ''),
                       ADMIN_USER_ID=os.getenv('ADMIN_USER_ID', ''),
-                      DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=16384)
+                      DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=3*1024*1024)
     if config:
         app.config.update(config)
     url = app.config['DATABASE_URL']
@@ -177,6 +185,7 @@ def create_app(config=None):
 
     def menu_keyboard(uid):
         rows = [[{'text': '💰 MyMoney'}, {'text': '📊 សង្ខេប / Summary'}],
+                [{'text': '💸 ថ្ងៃនេះអាចចាយ / Daily allowance'}],
                 [{'text': '➕ ចំណាយ / Expense'}, {'text': '💵 ចំណូល / Income'}],
                 [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
         if uid == admin and admin:
@@ -193,6 +202,33 @@ def create_app(config=None):
 
     def personal_summary(uid, period):
         today = datetime.now(TZ).date()
+        if period == 'allowance':
+            month = today.strftime('%Y-%m')
+            month_start = today.replace(day=1)
+            next_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1)
+            days_left = (next_month - today).days
+            with engine.connect() as conn:
+                limits = conn.execute(select(budgets.c.currency, budgets.c.amount).where(
+                    budgets.c.user_id == uid, budgets.c.month == month)).all()
+                expenses = conn.execute(select(transactions.c.currency, func.sum(transactions.c.amount)).where(
+                    transactions.c.user_id == uid, transactions.c.kind == 'expense',
+                    transactions.c.day >= month_start, transactions.c.day < next_month
+                ).group_by(transactions.c.currency)).all()
+            text = f'💸 ថ្ងៃនេះអាចចាយបាន / Spendable today\n{month} · {days_left} ថ្ងៃនៅសល់ រាប់ទាំងថ្ងៃនេះ / days left including today\n'
+            if not limits:
+                text += '\nមិនទាន់កំណត់ថវិកាខែនេះទេ។ បើក MyMoney ដើម្បីកំណត់ថវិកា។\nSet a monthly budget in MyMoney first.'
+            else:
+                for currency in ('KHR', 'USD'):
+                    limit = next((amount for cur, amount in limits if cur == currency), None)
+                    if limit is None:
+                        continue
+                    spent = next((amount or 0 for cur, amount in expenses if cur == currency), 0)
+                    remaining = max(0, limit - spent)
+                    daily = remaining // days_left
+                    text += f'\n{currency}\nនៅសល់ / Left: {display_money(remaining,currency)}\nថ្ងៃនេះអាចចាយ / Daily amount: {display_money(daily,currency)}'
+                    if remaining == 0:
+                        text += '\nបានប្រើថវិកាខែនេះអស់ហើយ / Monthly budget used.'
+            return {'text': text, 'reply_markup': open_buttons()}
         start = today if period == 'today' else today - timedelta(days=today.weekday()) if period == 'week' else today.replace(day=1)
         with engine.connect() as conn:
             totals = conn.execute(select(transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
@@ -207,6 +243,7 @@ def create_app(config=None):
             {'text': 'ថ្ងៃនេះ / Today', 'callback_data': 'summary:today'},
             {'text': 'សប្ដាហ៍ / Week', 'callback_data': 'summary:week'},
             {'text': 'ខែ / Month', 'callback_data': 'summary:month'}],
+            [{'text': '💸 ថ្ងៃនេះអាចចាយ / Spendable today', 'callback_data': 'summary:allowance'}],
             [{'text': '📈 ក្រាហ្វ / Charts', 'web_app': {'url': app.config['APP_URL']}}]]}}
 
     def budget_warning(uid, month, currency):
@@ -317,7 +354,7 @@ def create_app(config=None):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Cache-Control'] = 'no-store'
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'"
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'"
         return response
 
     @app.get('/')
@@ -329,6 +366,8 @@ def create_app(config=None):
         return {'ok': True}
 
     def json_body():
+        if len(request.get_data()) > 16384:
+            abort(413, 'JSON request too large')
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             abort(400, 'Expected a JSON object')
@@ -342,7 +381,17 @@ def create_app(config=None):
             currency = body['currency']
             day = date.fromisoformat(body['day'])
             note = body.get('note', '')
-            if kind not in ('expense', 'income') or category not in CATEGORIES or account not in ('cash', 'bank'):
+            builtin = category in CATEGORIES
+            custom = False
+            if isinstance(category, str) and not builtin and kind in ('expense', 'income'):
+                custom_table = personal_tables['custom_categories']
+                with engine.connect() as conn:
+                    category_kind = conn.execute(select(custom_table.c.kind).where(
+                        custom_table.c.user_id == g.user['id'], custom_table.c.key == category)).scalar_one_or_none()
+                custom = category_kind in (kind, 'both')
+            builtin_allowed = (kind == 'income' and category in ('salary', 'other')) or (
+                kind == 'expense' and category in CATEGORIES and category != 'salary')
+            if kind not in ('expense', 'income') or not (builtin_allowed or custom) or account not in ('cash', 'bank'):
                 raise ValueError()
             if not isinstance(note, str) or len(note) > 300 or day.year < 2000 or day > datetime.now(TZ).date():
                 raise ValueError()
@@ -369,7 +418,9 @@ def create_app(config=None):
             rows = conn.execute(select(transactions).where(transactions.c.user_id == g.user['id'],
                 transactions.c.day >= start, transactions.c.day < end).order_by(transactions.c.day.desc(), transactions.c.id.desc())).mappings().all()
             limits = conn.execute(select(budgets).where(budgets.c.user_id == g.user['id'], budgets.c.month == month)).mappings().all()
-        return jsonify(user={'name': (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
+        with engine.connect() as conn:
+            profile_name = conn.execute(select(personal_tables['profiles'].c.name).where(personal_tables['profiles'].c.user_id == g.user['id'])).scalar_one_or_none()
+        return jsonify(user={'name': profile_name or (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
                        transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits])
 
     @app.get('/api/summary')
@@ -386,6 +437,56 @@ def create_app(config=None):
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
         return {'start': start.isoformat(), 'end': today.isoformat(), 'totals': [
             {'currency': c, 'kind': k, 'amount': int(a)} for c,k,a in rows]}
+
+    @app.post('/api/transactions/delete-preview')
+    @auth
+    def preview_delete():
+        body = json_body()
+        scope = body.get('scope')
+        query = select(transactions.c.id, transactions.c.request_id).where(transactions.c.user_id == g.user['id'])
+        requested = None
+        if scope == 'selected':
+            requested = body.get('ids')
+            if not isinstance(requested, list) or not 1 <= len(requested) <= 1000 or any(type(i) is not int or i <= 0 for i in requested):
+                abort(400, 'Select 1–1000 valid entries.')
+            requested = set(requested)
+            query = query.where(transactions.c.id.in_(requested))
+        elif scope != 'all':
+            abort(400, 'Invalid deletion scope.')
+        with engine.begin() as conn:
+            snapshot = list(conn.execute(query))
+            ids = [row.id for row in snapshot]
+            if requested is not None and set(ids) != requested:
+                abort(404, 'An entry is unavailable. Refresh your history.')
+            now = int(time.time())
+            conn.execute(delete(delete_batches).where(delete_batches.c.expires_at < now))
+            conn.execute(delete(delete_batches).where(delete_batches.c.user_id == g.user['id']))
+            token = uuid.uuid4().hex if ids else None
+            if ids:
+                conn.execute(insert(delete_batches).values(token=token,user_id=g.user['id'],ids_json=json.dumps([row.request_id for row in snapshot]),expires_at=now+300))
+        return {'token':token,'count':len(ids),'scope':scope}
+
+    @app.post('/api/transactions/delete-confirm')
+    @auth
+    def confirm_delete():
+        body = json_body()
+        token = body.get('token')
+        if body.get('confirmation') != 'DELETE' or not isinstance(token,str) or len(token)!=32:
+            abort(400, 'Type DELETE to confirm.')
+        with engine.begin() as conn:
+            batch = conn.execute(delete(delete_batches).where(delete_batches.c.token==token,
+                delete_batches.c.user_id==g.user['id'],delete_batches.c.expires_at>=int(time.time()))
+                .returning(delete_batches.c.ids_json)).scalar_one_or_none()
+            if batch is None:
+                abort(409, 'Confirmation expired or already used. Refresh your history.')
+            ids = json.loads(batch)
+            count = 0
+            for start in range(0,len(ids),500):
+                deleted_rows = conn.execute(delete(transactions).where(transactions.c.user_id==g.user['id'],
+                    transactions.c.request_id.in_(ids[start:start+500])).returning(*transactions.c)).mappings().all()
+                archive_rows(conn, deleted_rows, personal_tables)
+                count += len(deleted_rows)
+        return {'deleted':count}
 
     @app.get('/api/goals')
     @auth
@@ -464,6 +565,9 @@ def create_app(config=None):
         key = body.get('request_id', '')
         if not isinstance(key, str) or not 8 <= len(key) <= 64:
             abort(400, 'Missing request ID')
+        with engine.connect() as conn:
+            if conn.execute(select(personal_tables['trash'].c.id).where(personal_tables['trash'].c.user_id==g.user['id'],personal_tables['trash'].c.request_id==key)).first():
+                abort(409, 'This entry is in trash. Restore it instead of retrying its creation.')
         try:
             with engine.begin() as conn:
                 result = conn.execute(insert(transactions).values(**values, user_id=g.user['id'], request_id=key))
@@ -491,9 +595,10 @@ def create_app(config=None):
     @auth
     def remove(identity):
         with engine.begin() as conn:
-            result = conn.execute(delete(transactions).where(transactions.c.id == identity, transactions.c.user_id == g.user['id']))
-            if not result.rowcount:
+            removed = conn.execute(delete(transactions).where(transactions.c.id == identity, transactions.c.user_id == g.user['id']).returning(*transactions.c)).mappings().all()
+            if not removed:
                 abort(404, 'Transaction not found')
+            archive_rows(conn, removed, personal_tables)
         return {'ok': True}
 
     @app.put('/api/budget')
@@ -513,7 +618,7 @@ def create_app(config=None):
         with engine.begin() as conn:
             conn.execute(stmt)
         budget_warning(g.user['id'],month,currency)
-        return {'ok': True}
+        return {'ok': True, 'month': month, 'currency': currency, 'amount': amount}
 
     @app.get('/api/export')
     @auth
@@ -553,7 +658,7 @@ def create_app(config=None):
             if action.startswith('summary:'):
                 telegram('answerCallbackQuery', {'callback_query_id': callback_id})
                 period = action.split(':', 1)[1]
-                payload = personal_summary(uid, period) if has_access(uid) and period in ('today','week','month') else {'text': '🔒 Send /request to request access.'}
+                payload = personal_summary(uid, period) if has_access(uid) and period in ('today','week','month','allowance') else {'text': '🔒 Send /request to request access.'}
                 telegram('sendMessage', {'chat_id': uid, **payload})
                 return {'ok': True}
             if action.startswith('admin:'):
@@ -604,6 +709,7 @@ def create_app(config=None):
         remember_user(user)
         raw = message.get('text', '').strip()
         aliases = {'💰 MyMoney':'/open','📊 សង្ខេប / Summary':'/summary',
+            '💸 ថ្ងៃនេះអាចចាយ / Daily allowance':'/allowance',
             '➕ ចំណាយ / Expense':'/expense','💵 ចំណូល / Income':'/income',
             '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
             '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
@@ -616,7 +722,7 @@ def create_app(config=None):
         elif command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
         elif command in ('/help', '/privacy'):
-            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\nExpense / Income — open entry form\n\n' + privacy
+            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\n/allowance — ថ្ងៃនេះអាចចាយបានប៉ុន្មាន? / Spendable today\nExpense / Income — open entry form\n\n' + privacy
         elif command == '/request':
             payload['text'] = request_access(user)
         elif command == '/admin':
@@ -648,6 +754,8 @@ def create_app(config=None):
             payload['reply_markup'] = {'inline_keyboard': [[{'text':'🔓 Request access','callback_data':'request_access'}]]}
         elif command == '/summary':
             payload.update(personal_summary(uid, 'month'))
+        elif command == '/allowance':
+            payload.update(personal_summary(uid, 'allowance'))
         elif command in ('/open','/expense','/income'):
             payload['text'] = '💰 ចុចបើក / Tap to open'
             payload['reply_markup'] = open_buttons(command[1:] if command != '/open' else '')
@@ -657,4 +765,5 @@ def create_app(config=None):
             return {'error': 'Telegram delivery failed'}, 502
         return {'ok': True}
 
+    register_features(app, engine, transactions, personal_tables, auth, json_body, amount_units, month_value, CATEGORIES)
     return app

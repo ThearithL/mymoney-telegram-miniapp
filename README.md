@@ -15,15 +15,15 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
 - Fullscreen request with safe-area spacing on supported Telegram clients.
 - Khmer/English interface; mobile navigation, light/dark system theme.
-- Add income/expenses, category, cash/bank label, date and optional note.
+- Add income/expenses, built-in or personal categories, cash/bank label, date and optional note. Track personal borrowing/lending with due dates, paid status, private proof photos and an audit timeline showing added/updated values. Create up to 40 personal categories for income, expenses or both; rename or delete them in Settings. Deletion is blocked while a category is attached to saved data.
 - Edit, confirmed delete, month/currency filters, history search and pagination.
 - Monthly income minus expenses, category bars, monthly budgets, in-app budget warnings.
-- KHR stored as integer riel; USD stored as integer cents. Totals stay separate.
+- KHR is stored as whole riel and USD as cents. The dashboard, history, charts, summaries and comparison combine both currencies using your saved display rate; each entry remains stored in its original currency. The default display rate is 4,000 KHR/USD and can be edited in Settings.
 - CSV export of your own full history, with spreadsheet formula escaping.
 - Server-side Telegram initData signature/age verification, user allowlist, per-user data isolation.
 - Duplicate create retries reuse a request ID; SQLAlchemy supports SQLite and PostgreSQL.
 
-**Scope:** This version implements the core tracker. Scheduled reminders, OCR, voice recognition, bank integration, account transfers and exchange-rate conversion are not included. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
+**Scope:** This version implements the core tracker. Scheduled reminders, OCR, voice recognition, bank integration and account transfers are not included. The exchange rate is manually editable and used for display totals only; it is not a live market quote. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
 
 ## 1. Create your Telegram bot
 
@@ -90,7 +90,7 @@ On your computer, set `.env` to the same `BOT_TOKEN`, `APP_URL` and `WEBHOOK_SEC
 
 Linux/macOS: `.venv/bin/python setup_bot.py`.
 
-The script registers the webhook, chat menu button and `/start`, `/menu`, `/id` commands. It replaces any existing webhook for this bot; use a dedicated bot, and do not run a polling bot with the same token.
+The script registers the webhook, chat menu button and bot commands including `/start`, `/menu`, `/id`, `/summary` and `/allowance`. It replaces any existing webhook for this bot; use a dedicated bot, and do not run a polling bot with the same token.
 
 **If you don't know your Telegram ID:** deploy initially with an empty `ALLOWED_USER_IDS`, run `setup_bot.py`, then send `/id` in your bot's private chat. Copy that numeric ID into Render's `ALLOWED_USER_IDS` environment variable and redeploy. The `/id` command works before access is allowed. For approval management, put your personal ID in ADMIN_USER_ID, not only in ALLOWED_USER_IDS.
 
@@ -182,8 +182,33 @@ Savings totals are manual records, not bank transfers and do not change income/e
 
 ## Personal-use update
 
-- Calculator: +, -, ×, ÷ and parentheses, with operation precedence and division-by-zero protection. Use amount fills a draft only; review currency and rounding (whole KHR / two decimal USD) before saving.
-- My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments, OCR, PDF receipts and recurring payments are not implemented in this package.
+- The calculator has been removed at the owner’s request.
+- My receipts: tap an expense to open a clean personal record summary, then Edit to edit/delete. These are summaries of your entries, not merchant-issued receipts. Photo attachments are supported; OCR, PDF receipt export and recurring payments are not implemented.
 - Owner greeting defaults to Thearith; change ADMIN_DISPLAY_NAME in Render if desired. This changes the Mini App greeting only, not Telegram profile or admin identity. ADMIN_USER_ID is still required.
 - Telegram: Close menu button or /closemenu hides the reply keyboard; /menu or /start opens it again. /id does not force it back open. The separate Telegram MyMoney launcher is unchanged.
+- Daily allowance: the Home page divides the selected currency's current-month budget remaining by the days left, including today. Telegram `/allowance` shows the same calculation for each currency with a budget. Set a monthly budget first.
 - Upload static/personal.js together with all other files.
+
+## New interface and transaction management
+
+Home now focuses on monthly totals, the current summary and recent activity. Insights contains the daily bar chart and category donut, including percentages, exact amounts, largest category and empty-state support. Donut values follow the selected month/currency and update after edits/deletions. Desktop uses two columns at 900px and above; mobile remains one column. Budget editing is available through the Home budget card’s Manage button.
+
+History supports Add expense/income, tap-to-view, Edit and individual Delete. Select enables checkboxes; Select visible selects only currently rendered rows. Load more reveals additional rows. Filtering discards selections outside the current filter. Delete selected previews the count before confirmation.
+
+Manage my data → Delete all my entries covers all of your transaction history, across months and both currencies. It preserves budgets, goals and access settings. The dialog requires typing DELETE. Deletion moves records to Trash. Restore from Settings → Trash; only Delete forever inside Trash is permanent. The server uses an owner-bound, five-minute, single-use snapshot, so later entries are not included. Creating a new preview invalidates the old one. No live user records are deleted during deployment.
+
+Upload the full static folder, including design.js, design.css and history.js. The backend creates the delete_batches table automatically. Keep your existing Neon DATABASE_URL.
+
+## Profile, receipt photos, trash and category budgets
+
+- Settings → My profile: save a display name (1–80 characters) and optional bio (160 characters). Saved per Telegram user in Neon; changes the App greeting, not Telegram identity/admin rights.
+- All individual and bulk transaction deletions now move records into Trash. Settings → Trash lists 100 records at a time with Load more. Restore keeps the original amount/date/category and receipt photo; active totals and charts include it again. Delete forever requires confirmation and removes the photo. Trash has no automatic expiration. Budgets/goals retain their existing behavior.
+- Open an expense record to attach one receipt photo. JPEG/PNG/WebP, maximum input 2 MB / 20 megapixels; animated images are rejected. Server normalizes to JPEG, removes metadata and resizes to at most 1600×1600. Photos are stored as database bytes in Neon, not ephemeral Render disk. They consume database storage. Only the signed-in owner can fetch/upload/remove through the photo API. Upload after saving the expense.
+- Home → monthly budget → Manage also contains Category budgets. Limits are keyed by user/month/currency/category; set again to edit, Remove limit to delete. Progress and 80%/100% warnings are in-app. Existing Telegram alerts still concern the overall monthly budget.
+- Insights → Month comparison shows expense totals for the selected and previous calendar months, difference and percent change. Current-month comparisons are marked incomplete; a zero previous-month baseline shows no percentage.
+- Added subtle card, modal, chart and button animations. Device Reduce Motion disables animations.
+- Update all files, including personal_features.py and static/features.js, and reinstall requirements (Pillow is new). New tables are additive; no existing financial records are deleted by deployment.
+
+## Hide amounts and favorites
+
+The eye button in the header hides monetary values in the current browser until toggled back on; the choice is stored locally in that browser. It is a quick privacy aid for shoulder viewing, not a password lock. Up to 12 personal favorites can be saved from an entry form and launched from Home. A favorite fills a draft; review it and press Save to make a transaction. Removing a favorite does not delete transactions.

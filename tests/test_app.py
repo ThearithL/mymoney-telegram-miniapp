@@ -55,10 +55,20 @@ def test_rejects_invalid_money(client,amount,currency):
     data=payload();data.update(amount=amount,currency=currency)
     assert client.post('/api/transactions',json=data,headers=headers()).status_code==400
 
+@pytest.mark.parametrize('kind,category', [('expense','salary'),('income','food')])
+def test_transaction_category_must_match_kind(client,kind,category):
+    data=payload();data.update(kind=kind,category=category)
+    assert client.post('/api/transactions',json=data,headers=headers()).status_code==400
+    valid={**data,'category':'other','request_id':'valid-category-'+kind}
+    assert client.post('/api/transactions',json=valid,headers=headers()).status_code==201
+
 def test_budget_currency_and_month_isolation(client):
     for currency,amount in [('USD','100.25'),('KHR','200000')]:
-        assert client.put('/api/budget',json={'month':'2026-01','currency':currency,'amount':amount},headers=headers()).status_code==200
-    client.put('/api/budget',json={'month':'2026-01','currency':'USD','amount':'200'},headers=headers())
+        response=client.put('/api/budget',json={'month':'2026-01','currency':currency,'amount':amount},headers=headers())
+        assert response.status_code==200
+        assert response.json['amount']==(10025 if currency=='USD' else 200000)
+    updated=client.put('/api/budget',json={'month':'2026-01','currency':'USD','amount':'200'},headers=headers())
+    assert updated.json=={'ok':True,'month':'2026-01','currency':'USD','amount':20000}
     budgets=client.get('/api/data?month=2026-01',headers=headers()).json['budgets']
     assert {b['currency']:b['amount'] for b in budgets}=={'USD':20000,'KHR':200000}
     assert not client.get('/api/data?month=2026-02',headers=headers()).json['budgets']
@@ -296,6 +306,27 @@ def test_budget_alerts_once_per_threshold_and_no_other_user_leak(access_client):
     client.post('/api/transactions',headers=headers(),json=data)
     assert len(calls)==2
 
+def test_telegram_daily_allowance_uses_budget_remaining(access_client):
+    from app import datetime, TZ, display_money
+    client,calls,_=access_client
+    today=datetime.now(TZ).date()
+    month=today.strftime('%Y-%m')
+    client.put('/api/budget',headers=headers(),json={'month':month,'currency':'USD','amount':'100'})
+    data=payload();data.update(day=today.isoformat(),amount='20')
+    assert client.post('/api/transactions',headers=headers(),json=data).status_code==201
+
+    response=message(client,123,'/allowance')
+    assert response.status_code==200
+    text=calls[-1][1]['text']
+    days_left=(today.replace(day=28)+__import__('datetime').timedelta(days=4)).replace(day=1)
+    remaining_days=(days_left-today).days
+    assert 'Spendable today' in text
+    assert f'Left: {display_money(8000,"USD")}' in text
+    assert f'Daily amount: {display_money(8000//remaining_days,"USD")}' in text
+    assert message(client,123,'/start').status_code==200
+    keyboard=calls[-2][1]['reply_markup']['keyboard']
+    assert any(row[0]['text']=='💸 ថ្ងៃនេះអាចចាយ / Daily allowance' for row in keyboard)
+
 def test_budget_delivery_failure_keeps_transaction_and_retries(access_client,monkeypatch):
     from app import datetime, TZ
     import requests
@@ -342,3 +373,220 @@ def test_menu_close_and_reopen(access_client):
     calls.clear()
     message(client,123,'/menu')
     assert any('keyboard' in body.get('reply_markup',{}) for _,body in calls)
+
+def test_bulk_selected_delete_is_owner_scoped_and_single_use(client):
+    mine=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
+    theirs=client.post('/api/transactions',json=payload(),headers=headers(456)).json['id']
+    endpoint='/api/transactions/delete-preview'
+    assert client.post(endpoint,json={'scope':'all'}).status_code==401
+    assert client.post(endpoint,json={'scope':'selected','ids':[mine,theirs]},headers=headers()).status_code==404
+    preview=client.post(endpoint,json={'scope':'selected','ids':[mine]},headers=headers()).json
+    assert preview['count']==1
+    body={'token':preview['token'],'confirmation':'DELETE'}
+    assert client.post('/api/transactions/delete-confirm',json=body,headers=headers(456)).status_code==409
+    assert client.post('/api/transactions/delete-confirm',json={**body,'confirmation':'yes'},headers=headers()).status_code==400
+    assert client.post('/api/transactions/delete-confirm',json=body,headers=headers()).json['deleted']==1
+    assert client.post('/api/transactions/delete-confirm',json=body,headers=headers()).status_code==409
+    assert len(client.get('/api/data?month=2026-01',headers=headers(456)).json['transactions'])==1
+
+
+def test_bulk_all_snapshot_preserves_later_entries_and_goals(client):
+    a=payload();client.post('/api/transactions',json=a,headers=headers())
+    b={**a,'request_id':'second-request','currency':'KHR','amount':'12000','day':'2025-12-20'}
+    client.post('/api/transactions',json=b,headers=headers())
+    client.post('/api/goals',json={'title':'Laptop','currency':'USD','target':'500','saved':'20','request_id':'goal-new-test'},headers=headers())
+    preview=client.post('/api/transactions/delete-preview',json={'scope':'all'},headers=headers()).json
+    assert preview['count']==2
+    client.post('/api/transactions',json={**a,'request_id':'after-preview'},headers=headers())
+    response=client.post('/api/transactions/delete-confirm',json={'token':preview['token'],'confirmation':'DELETE'},headers=headers())
+    assert response.json['deleted']==2
+    assert len(client.get('/api/data?month=2026-01',headers=headers()).json['transactions'])==1
+    assert len(client.get('/api/goals',headers=headers()).json['goals'])==1
+
+
+def test_bulk_preview_invalidates_previous_and_expires(client,monkeypatch):
+    client.post('/api/transactions',json=payload(),headers=headers())
+    preview=lambda:client.post('/api/transactions/delete-preview',json={'scope':'all'},headers=headers()).json
+    old=preview();new=preview()
+    assert client.post('/api/transactions/delete-confirm',json={'token':old['token'],'confirmation':'DELETE'},headers=headers()).status_code==409
+    now=time.time();monkeypatch.setattr('app.time.time',lambda:now+301)
+    assert client.post('/api/transactions/delete-confirm',json={'token':new['token'],'confirmation':'DELETE'},headers=headers()).status_code==409
+    assert len(client.get('/api/data?month=2026-01',headers=headers()).json['transactions'])==1
+
+
+@pytest.mark.parametrize('body',[{'scope':'other'},{'scope':'selected','ids':[]},{'scope':'selected','ids':[True]},{'scope':'selected','ids':'1'}])
+def test_bulk_preview_rejects_invalid_selection(client,body):
+    assert client.post('/api/transactions/delete-preview',json=body,headers=headers()).status_code==400
+
+def test_trash_restore_photo_and_permanent_delete(client):
+    import io
+    from PIL import Image
+    photo=io.BytesIO();Image.new('RGB',(32,32),'green').save(photo,format='PNG')
+    identity=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
+    url=f'/api/transactions/{identity}/photo'
+    assert client.put(url,data=photo.getvalue(),content_type='image/png',headers=headers(456)).status_code==404
+    assert client.put(url,data=b'not an image',content_type='image/png',headers=headers()).status_code==400
+    assert client.put(url,data=photo.getvalue(),content_type='image/png',headers=headers()).status_code==200
+    response=client.get(url,headers=headers());assert response.mimetype=='image/jpeg'
+    assert response.headers['Cache-Control']=='no-store'
+    assert client.get(url,headers=headers(456)).status_code==404
+    assert client.delete(f'/api/transactions/{identity}',headers=headers()).status_code==200
+    trashed=client.get('/api/trash',headers=headers()).json['entries'][0]
+    assert not client.get('/api/trash',headers=headers(456)).json['entries']
+    assert client.post('/api/transactions',json=payload(),headers=headers()).status_code==409
+    assert client.post(f"/api/trash/{trashed['id']}/restore",headers=headers(456)).status_code==404
+    restored=client.post(f"/api/trash/{trashed['id']}/restore",headers=headers()).json['id']
+    assert client.get(f'/api/transactions/{restored}/photo',headers=headers()).status_code==200
+    assert client.post(f"/api/trash/{trashed['id']}/restore",headers=headers()).status_code==404
+    client.delete(f'/api/transactions/{restored}',headers=headers())
+    tid=client.get('/api/trash',headers=headers()).json['entries'][0]['id']
+    assert client.delete(f'/api/trash/{tid}',json={},headers=headers()).status_code==400
+    assert client.delete(f'/api/trash/{tid}',json={'confirmation':'DELETE'},headers=headers()).status_code==200
+    assert client.get('/api/trash',headers=headers()).json['total']==0
+
+
+def test_profile_persists_and_is_owner_scoped(client):
+    assert client.put('/api/profile',json={'name':'Thearith','bio':'Student'},headers=headers()).status_code==200
+    assert client.get('/api/data',headers=headers()).json['user']['name']=='Thearith'
+    assert client.get('/api/profile',headers=headers()).json['bio']=='Student'
+    assert client.get('/api/profile',headers=headers(456)).json['name']==''
+    assert client.put('/api/profile',json={'name':' '},headers=headers()).status_code==400
+    assert client.put('/api/profile',json={'name':'A'*81},headers=headers()).status_code==400
+
+
+def test_category_limits_and_comparison_after_restore(client):
+    a=payload();identity=client.post('/api/transactions',json=a,headers=headers()).json['id']
+    b={**a,'amount':'10','day':'2025-12-10','request_id':'previous-month-test'}
+    client.post('/api/transactions',json=b,headers=headers())
+    client.post('/api/transactions',json={**b,'amount':'100'},headers=headers(456))
+    limit={'month':'2026-01','currency':'USD','category':'food','amount':'20'}
+    assert client.put('/api/category-budgets',json=limit,headers=headers()).status_code==200
+    assert client.put('/api/category-budgets',json={**limit,'category':'salary'},headers=headers()).status_code==400
+    assert client.put('/api/category-budgets',json={**limit,'category':['food']},headers=headers()).status_code==400
+    assert client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets'][0]['spent']==1234
+    updated=client.put('/api/category-budgets',json={**limit,'amount':'25'},headers=headers())
+    assert updated.status_code==200
+    saved=client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets']
+    assert len(saved)==1 and saved[0]['amount']==2500 and saved[0]['spent']==1234
+    assert not client.get('/api/category-budgets?month=2026-01',headers=headers(456)).json['budgets']
+    data=client.get('/api/compare?month=2026-01',headers=headers()).json
+    assert data['previous_month']=='2025-12'
+    assert data['totals']['previous']['USD']['expense']==1000
+    assert data['totals']['current']['USD']['expense']==1234
+    client.delete(f'/api/transactions/{identity}',headers=headers())
+    assert client.get('/api/compare?month=2026-01',headers=headers()).json['totals']['current']['USD']['expense']==0
+    tid=client.get('/api/trash',headers=headers()).json['entries'][0]['id']
+    client.post(f'/api/trash/{tid}/restore',headers=headers())
+    assert client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets'][0]['spent']==1234
+    client.delete('/api/category-budgets',json=limit,headers=headers())
+    assert not client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets']
+
+
+def test_bulk_delete_moves_all_selected_to_trash(client):
+    for i in range(3):client.post('/api/transactions',json={**payload(),'request_id':f'bulk-trash-{i}'},headers=headers())
+    batch=client.post('/api/transactions/delete-preview',json={'scope':'all'},headers=headers()).json
+    assert client.post('/api/transactions/delete-confirm',json={'token':batch['token'],'confirmation':'DELETE'},headers=headers()).json['deleted']==3
+    assert client.get('/api/trash',headers=headers()).json['total']==3
+    assert not client.get('/api/data?month=2026-01',headers=headers()).json['transactions']
+
+
+def test_photo_size_and_json_limit(client):
+    identity=client.post('/api/transactions',json=payload(),headers=headers()).json['id']
+    assert client.put(f'/api/transactions/{identity}/photo',data=b'x'*(2*1024*1024+1),headers=headers()).status_code==400
+    assert client.put('/api/profile',json={'name':'x','bio':'x'*17000},headers=headers()).status_code==413
+
+
+def test_favorites_crud_is_scoped_and_validated(client):
+    assert client.get('/api/favorites',headers=headers()).json=={'favorites':[]}
+    favorite={'title':'Morning coffee','kind':'expense','category':'coffee','amount':'2.50','currency':'USD','account':'cash','note':'Latte'}
+    assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==201
+    saved=client.get('/api/favorites',headers=headers()).json['favorites']
+    assert len(saved)==1 and saved[0]['amount']==250
+    assert client.get('/api/favorites',headers=headers(456)).json['favorites']==[]
+    identity=saved[0]['id']
+    assert client.delete(f'/api/favorites/{identity}',headers=headers(456)).status_code==404
+    assert client.delete(f'/api/favorites/{identity}',headers=headers()).status_code==200
+    assert client.get('/api/favorites',headers=headers()).json['favorites']==[]
+    assert client.post('/api/favorites',json={**favorite,'title':' '},headers=headers()).status_code==400
+    assert client.post('/api/favorites',json={**favorite,'category':'salary'},headers=headers()).status_code==400
+    assert client.post('/api/favorites',json={**favorite,'kind':'income','category':'salary'},headers=headers()).status_code==201
+
+
+def test_favorite_limit(client):
+    for index in range(12):
+        favorite={'title':f'Favorite {index}','kind':'expense','category':'food','amount':'10','currency':'KHR','account':'cash','note':''}
+        assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==201
+    favorite={'title':'Thirteenth','kind':'expense','category':'food','amount':'10','currency':'KHR','account':'cash','note':''}
+    assert client.post('/api/favorites',json=favorite,headers=headers()).status_code==409
+
+
+def test_fx_display_settings_are_validated_and_private(client):
+    assert client.get('/api/fx',headers=headers()).json=={'base_currency':'KHR','rate_khr_per_usd':4000.0}
+    saved=client.put('/api/fx',json={'base_currency':'USD','rate_khr_per_usd':'4102.5'},headers=headers())
+    assert saved.status_code==200
+    assert saved.json=={'ok':True,'base_currency':'USD','rate_khr_per_usd':4102.5}
+    assert client.get('/api/fx',headers=headers()).json=={'base_currency':'USD','rate_khr_per_usd':4102.5}
+    assert client.get('/api/fx',headers=headers(456)).json=={'base_currency':'KHR','rate_khr_per_usd':4000.0}
+    for currency,rate in [('EUR',4000),('KHR',0),('USD',100001),('USD','NaN'),('USD','4.12345')]:
+        assert client.put('/api/fx',json={'base_currency':currency,'rate_khr_per_usd':rate},headers=headers()).status_code==400
+
+
+def test_custom_categories_crud_ownership_and_transaction_use(client):
+    created=client.post('/api/categories',json={'name':'Pets','kind':'expense'},headers=headers())
+    assert created.status_code==201
+    category=created.json
+    assert category['name']=='Pets' and category['kind']=='expense'
+    assert client.get('/api/categories',headers=headers(456)).json=={'categories':[]}
+    entry={**payload(),'currency':'KHR','amount':'2500','category':category['key']}
+    assert client.post('/api/transactions',json=entry,headers=headers()).status_code==201
+    assert client.post('/api/transactions',json={**entry,'request_id':'wrong-owner-category'},headers=headers(456)).status_code==400
+    assert client.put('/api/categories/'+category['key'],json={'name':'Pet care'},headers=headers()).status_code==200
+    assert client.delete('/api/categories/'+category['key'],headers=headers()).status_code==409
+    assert client.put('/api/categories/'+category['key'],json={'name':'Pets'},headers=headers(456)).status_code==404
+    income=client.post('/api/categories',json={'name':'Gift money','kind':'income'},headers=headers()).json
+    wrong_type={**payload(),'category':income['key'],'request_id':'wrong-category-type'}
+    assert client.post('/api/transactions',json=wrong_type,headers=headers()).status_code==400
+    assert client.put('/api/category-budgets',json={'month':'2026-01','currency':'KHR','category':income['key'],'amount':'20'},headers=headers()).status_code==400
+    assert client.delete('/api/categories/'+income['key'],headers=headers()).status_code==200
+    assert client.post('/api/categories',json={'name':'  ','kind':'both'},headers=headers()).status_code==400
+
+
+def test_personal_debts_crud_proof_photo_and_user_isolation(client):
+    import io
+    from PIL import Image
+    data={'direction':'lent','person':'Sokha','amount':'25.50','currency':'USD','due_date':'2026-12-01','note':'Dinner share'}
+    created=client.post('/api/debts',json=data,headers=headers())
+    assert created.status_code==201
+    identity=created.json['id']
+    record=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert record['person']=='Sokha' and record['amount']==2550 and record['status']=='open' and record['has_photo'] is False
+    history=client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']
+    assert len(history)==1 and history[0]['action']=='created' and history[0]['details']['after']['due_date']=='2026-12-01'
+    assert client.get('/api/debts',headers=headers(uid=456)).json=={'debts':[]}
+    assert client.get(f'/api/debts/{identity}/history',headers=headers(uid=456)).status_code==404
+    assert client.put(f'/api/debts/{identity}',json={**data,'person':'New name'},headers=headers(uid=456)).status_code==404
+    updated=client.put(f'/api/debts/{identity}',json={**data,'person':'Sokha Dara','due_date':'2026-12-15'},headers=headers())
+    assert updated.status_code==200
+    history=client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']
+    assert history[0]['action']=='updated' and history[0]['details']['before']['due_date']=='2026-12-01'
+    assert history[0]['details']['after']['due_date']=='2026-12-15' and 'due_date' in history[0]['details']['changed_fields']
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers(uid=456)).status_code==404
+    image=io.BytesIO();Image.new('RGB',(40,40),'blue').save(image,format='PNG')
+    photo_url=f'/api/debts/{identity}/photo'
+    assert client.put(photo_url,data=image.getvalue(),content_type='image/png',headers=headers(uid=456)).status_code==404
+    assert client.put(photo_url,data=image.getvalue(),content_type='image/png',headers=headers()).status_code==200
+    photo=client.get(photo_url,headers=headers())
+    assert photo.status_code==200 and photo.mimetype=='image/jpeg'
+    assert client.get(photo_url,headers=headers(uid=456)).status_code==404
+    assert client.get('/api/debts?status=settled',headers=headers()).json['debts']==[]
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers()).status_code==200
+    assert client.get('/api/debts?status=settled',headers=headers()).json['debts'][0]['settled_at']
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'open'},headers=headers()).status_code==200
+    actions=[event['action'] for event in client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']]
+    assert 'settled' in actions and 'reopened' in actions and 'photo_attached' in actions
+    assert client.put(f'/api/debts/{identity}',json={**data,'person':'Sokha'},headers=headers()).status_code==200
+    assert client.delete(f'/api/debts/{identity}',headers=headers(uid=456)).status_code==404
+    assert client.delete(f'/api/debts/{identity}',headers=headers()).status_code==200
+    assert client.get(photo_url,headers=headers()).status_code==404
+    assert client.post('/api/debts',json={**data,'direction':'other'},headers=headers()).status_code==400
+    assert client.post('/api/debts',json={**data,'person':' '},headers=headers()).status_code==400
