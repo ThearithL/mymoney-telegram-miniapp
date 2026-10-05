@@ -28,12 +28,16 @@ def archive_rows(conn,rows,tables):
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
     trash,photos,profiles,limits,favorites,fx,custom_categories,debts,debt_photos,debt_events=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories','debts','debt_photos','debt_events'])
     def category_allowed(key,kind=None):
+<<<<<<< HEAD
         if not isinstance(key,str):return False
         if key in categories:
             if kind is None:return True
             if key=='salary':return kind=='income'
             if key=='other':return kind in ('expense','income')
             return kind=='expense'
+=======
+        if key in categories:return kind is None or kind in ('expense','income')
+>>>>>>> 7599fb15555624d40a1bc2bfa81e6e173dd88ab3
         with engine.connect() as conn:row=conn.execute(select(custom_categories.c.kind).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key)).scalar_one_or_none()
         return row is not None and (kind is None or row in (kind,'both'))
     def upsert(table):

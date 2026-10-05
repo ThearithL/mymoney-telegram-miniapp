@@ -461,6 +461,7 @@ def test_category_limits_and_comparison_after_restore(client):
     client.post('/api/transactions',json={**b,'amount':'100'},headers=headers(456))
     limit={'month':'2026-01','currency':'USD','category':'food','amount':'20'}
     assert client.put('/api/category-budgets',json=limit,headers=headers()).status_code==200
+<<<<<<< HEAD
     assert client.put('/api/category-budgets',json={**limit,'category':'salary'},headers=headers()).status_code==400
     assert client.put('/api/category-budgets',json={**limit,'category':['food']},headers=headers()).status_code==400
     assert client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets'][0]['spent']==1234
@@ -468,6 +469,9 @@ def test_category_limits_and_comparison_after_restore(client):
     assert updated.status_code==200
     saved=client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets']
     assert len(saved)==1 and saved[0]['amount']==2500 and saved[0]['spent']==1234
+=======
+    assert client.get('/api/category-budgets?month=2026-01',headers=headers()).json['budgets'][0]['spent']==1234
+>>>>>>> 7599fb15555624d40a1bc2bfa81e6e173dd88ab3
     assert not client.get('/api/category-budgets?month=2026-01',headers=headers(456)).json['budgets']
     data=client.get('/api/compare?month=2026-01',headers=headers()).json
     assert data['previous_month']=='2025-12'
@@ -508,8 +512,12 @@ def test_favorites_crud_is_scoped_and_validated(client):
     assert client.delete(f'/api/favorites/{identity}',headers=headers()).status_code==200
     assert client.get('/api/favorites',headers=headers()).json['favorites']==[]
     assert client.post('/api/favorites',json={**favorite,'title':' '},headers=headers()).status_code==400
+<<<<<<< HEAD
     assert client.post('/api/favorites',json={**favorite,'category':'salary'},headers=headers()).status_code==400
     assert client.post('/api/favorites',json={**favorite,'kind':'income','category':'salary'},headers=headers()).status_code==201
+=======
+    assert client.post('/api/favorites',json={**favorite,'category':'salary'},headers=headers()).status_code==201
+>>>>>>> 7599fb15555624d40a1bc2bfa81e6e173dd88ab3
 
 
 def test_favorite_limit(client):

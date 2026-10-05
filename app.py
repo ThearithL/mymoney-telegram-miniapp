@@ -389,9 +389,13 @@ def create_app(config=None):
                     category_kind = conn.execute(select(custom_table.c.kind).where(
                         custom_table.c.user_id == g.user['id'], custom_table.c.key == category)).scalar_one_or_none()
                 custom = category_kind in (kind, 'both')
+<<<<<<< HEAD
             builtin_allowed = (kind == 'income' and category in ('salary', 'other')) or (
                 kind == 'expense' and category in CATEGORIES and category != 'salary')
             if kind not in ('expense', 'income') or not (builtin_allowed or custom) or account not in ('cash', 'bank'):
+=======
+            if kind not in ('expense', 'income') or not (builtin or custom) or account not in ('cash', 'bank'):
+>>>>>>> 7599fb15555624d40a1bc2bfa81e6e173dd88ab3
                 raise ValueError()
             if not isinstance(note, str) or len(note) > 300 or day.year < 2000 or day > datetime.now(TZ).date():
                 raise ValueError()
