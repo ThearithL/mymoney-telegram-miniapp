@@ -1,5 +1,39 @@
 'use strict';
 let adminSelectedUser = null;
+let adminOverview = null;
+
+async function loadAdminOverview(){
+  try{
+    adminOverview=await api('/api/admin/overview');
+    const metrics=$('adminMetrics');metrics.replaceChildren();
+    for(const [label,value] of [['Users / អ្នកប្រើ',adminOverview.user_count],['Transactions / កំណត់ត្រា',adminOverview.transaction_count]]){
+      const card=node('div',undefined,'admin-metric');card.append(node('small',label),node('strong',String(value)));metrics.append(card);
+    }
+    for(const currency of ['USD','KHR']){
+      const amount=adminOverview.expenses.find(item=>item.currency===currency)?.amount||0;
+      const card=node('div',undefined,'admin-metric');card.append(node('small',`Expenses this month · ${currency}`),node('strong',money(amount,currency)));metrics.append(card);
+    }
+    const statuses=adminOverview.statuses, statusBox=$('adminStatusBreakdown');statusBox.replaceChildren(node('h4','User access / សិទ្ធិអ្នកប្រើ'));
+    for(const [key,label] of [['admin','Admins'],['approved','Approved'],['pending','Pending'],['revoked','Revoked'],['not_requested','Not requested']]){
+      statusBox.append(node('span',`${label}: ${statuses[key]||0}`,'admin-status-chip'));
+    }
+    renderAdminDonut();
+  }catch(error){$('adminMetrics').replaceChildren(node('p',error.message,'form-status'));}
+}
+
+function renderAdminDonut(){
+  if(!adminOverview)return;
+  const currency=$('adminChartCurrency').value;
+  const rows=adminOverview.categories.filter(row=>row.currency===currency&&row.amount>0).sort((a,b)=>b.amount-a.amount);
+  const total=rows.reduce((sum,row)=>sum+row.amount,0), colors=['#18845b','#e39c35','#5477d4','#d95c67','#8b63c7','#36a6a0','#b5a33b','#78838c'];
+  let angle=0;const stops=[];
+  rows.forEach((row,index)=>{const next=angle+(row.amount/total*360);stops.push(`${colors[index%colors.length]} ${angle}deg ${next}deg`);angle=next;});
+  $('adminDonut').style.background=total?`conic-gradient(${stops.join(',')})`:'conic-gradient(var(--line) 0deg 360deg)';
+  $('adminDonutTotal').textContent=money(total,currency);$('adminDonutLabel').textContent=total?`${adminOverview.month} · ${currency}`:'No expenses';
+  const legend=$('adminChartLegend');legend.replaceChildren();
+  if(!rows.length)legend.append(node('p','No expenses recorded this month. / ខែនេះមិនទាន់មានចំណាយទេ។','muted'));
+  rows.forEach((row,index)=>{const item=node('div',undefined,'admin-legend-item');item.append(node('i','',undefined));item.lastChild.style.background=colors[index%colors.length];item.append(node('span',row.category),node('strong',money(row.amount,currency)));legend.append(item);});
+}
 
 async function loadAdminConsole(){
   const status=$('adminStatus');
@@ -7,6 +41,7 @@ async function loadAdminConsole(){
   $('adminUsers').replaceChildren();
   $('adminUserDetail').hidden=true;
   $('adminOwnerTools').hidden=!state.user?.is_owner;
+  await loadAdminOverview();
   try{
     const result=await api('/api/admin/users');
     status.textContent=`${result.users.length} users / អ្នកប្រើ ${result.users.length} នាក់`;
@@ -70,11 +105,82 @@ async function loadAdminUser(id){
     if(data.budgets.length){for(const budget of data.budgets)panel.append(node('p',`${budget.month} · ${money(budget.amount,budget.currency)}`));}
     else panel.append(node('p','No budgets. / មិនទាន់កំណត់ថវិកា។','muted'));
     panel.append(node('h4','Recent transactions / កំណត់ត្រាថ្មីៗ'));
+    if(state.user?.is_owner)panel.append(buildAdminTransactionForm(id));
     for(const tx of data.transactions){
       const item=node('div',undefined,'admin-record');
       item.append(node('strong',`${tx.day} · ${tx.kind==='expense'?'−':'+'}${money(tx.amount,tx.currency)}`),node('small',`${tx.category} · ${tx.account}${tx.note?' · '+tx.note:''}`));panel.append(item);
+      if(state.user?.is_owner){
+        const actions=node('div',undefined,'admin-record-actions');
+        const edit=node('button','Edit / កែ','secondary');edit.type='button';edit.onclick=()=>fillAdminTransactionForm(panel,tx);
+        const remove=node('button','Delete / លុប','text-btn');remove.type='button';remove.onclick=async()=>{
+          if(!confirm(`Move transaction #${tx.id} to this user's Trash? They can restore it.`))return;
+          remove.disabled=true;try{await api(`/api/admin/users/${id}/transactions/${tx.id}`,{method:'DELETE'});toast('Moved to user Trash / បានដាក់ក្នុងធុងសំរាម');await loadAdminUser(id);await loadAdminOverview();}
+          catch(error){panel.append(node('p',error.message,'form-status'));remove.disabled=false;}
+        };
+        actions.append(edit,remove);item.append(actions);
+      }
     }
+    if(state.user?.is_owner)await appendAdminMessages(panel,id);
   }catch(error){panel.replaceChildren(node('p',error.message,'form-status'));}
+}
+
+function buildAdminTransactionForm(userId){
+  const section=node('section',undefined,'admin-crud');section.append(node('h4','＋ Add or edit a transaction / បន្ថែម ឬកែប្រតិបត្តិការ'));
+  const form=document.createElement('form');form.id='adminTransactionForm';
+  const kind=adminSelect('kind',[['expense','Expense'],['income','Income']]);
+  const amount=document.createElement('input');amount.type='number';amount.min='0.01';amount.step='0.01';amount.required=true;amount.inputMode='decimal';
+  const currency=adminSelect('currency',[['USD','USD'],['KHR','KHR']]);
+  const category=adminSelect('category',[]);
+  const account=adminSelect('account',[['cash','Cash'],['bank','Bank']]);
+  const spending=adminSelect('spending_type',[['essential','Essential'],['want','Want'],['none','None']]);
+  const day=document.createElement('input');day.type='date';day.max=adminLocalDate();day.required=true;
+  const note=document.createElement('input');note.maxLength=300;
+  for(const [label,input] of [['Type',kind],['Amount',amount],['Currency',currency],['Category',category],['Account',account],['Spending type',spending],['Date',day],['Note',note]]){
+    const wrap=document.createElement('label');wrap.append(node('span',label),input);form.append(wrap);
+  }
+  const updateCategories=()=>{const options=kind.value==='income'?[['salary','Salary'],['other','Other']]:[['food','Food'],['coffee','Coffee'],['transport','Transport'],['shopping','Shopping'],['bills','Bills'],['study','Study'],['health','Health'],['other','Other']];category.replaceChildren(...options.map(([v,l])=>new Option(l,v)));spending.disabled=kind.value==='income';};
+  kind.onchange=updateCategories;updateCategories();
+  const status=node('p','','form-status');status.setAttribute('role','status');form.append(status);
+  const save=node('button','Save transaction / រក្សាទុក','primary');save.type='submit';form.append(save);
+  form.onsubmit=async event=>{
+    event.preventDefault();save.disabled=true;status.textContent='Saving…';
+    const payload={kind:kind.value,amount:amount.value,currency:currency.value,category:category.value,account:account.value,
+      spending_type:kind.value==='income'?null:spending.value,day:day.value,note:note.value};
+    try{
+      const editing=form.dataset.transactionId;
+      if(editing)await api(`/api/admin/users/${userId}/transactions/${editing}`,{method:'PUT',body:JSON.stringify(payload)});
+      else await api(`/api/admin/users/${userId}/transactions`,{method:'POST',body:JSON.stringify({...payload,request_id:crypto.randomUUID()})});
+      toast(editing?'Transaction updated':'Transaction added');await loadAdminUser(userId);await loadAdminOverview();
+    }catch(error){status.textContent=error.message;save.disabled=false;}
+  };
+  section.append(form);return section;
+}
+
+function adminSelect(name,options){const select=document.createElement('select');select.name=name;for(const [value,label] of options)select.add(new Option(label,value));return select;}
+function adminLocalDate(){const now=new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;}
+
+function fillAdminTransactionForm(panel,tx){
+  const form=panel.querySelector('#adminTransactionForm');if(!form)return;
+  form.dataset.transactionId=tx.id;form.elements.kind.value=tx.kind;form.elements.kind.dispatchEvent(new Event('change'));
+  form.elements.amount.value=tx.amount/(tx.currency==='USD'?100:1);form.elements.currency.value=tx.currency;
+  form.elements.category.value=tx.category;form.elements.account.value=tx.account;form.elements.spending_type.value=tx.spending_type||'none';
+  form.elements.day.value=tx.day;form.elements.note.value=tx.note||'';form.scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+async function appendAdminMessages(panel,userId){
+  const section=node('section',undefined,'admin-crud');section.append(node('h4','✉️ Message this user / ផ្ញើសារទៅអ្នកប្រើ'));
+  const form=document.createElement('form');const text=document.createElement('textarea');text.maxLength=1000;text.required=true;text.rows=3;text.placeholder='Write a message (up to 1000 characters)';
+  const label=document.createElement('label');label.append(node('span','Message / សារ'),text);form.append(label);
+  const status=node('p','','form-status');status.setAttribute('role','status');form.append(status);
+  const send=node('button','Send message / ផ្ញើសារ','secondary');send.type='submit';form.append(send);
+  form.onsubmit=async event=>{event.preventDefault();if(!confirm(`Send this message to Telegram user ${userId}?`))return;send.disabled=true;status.textContent='Sending…';
+    try{const result=await api(`/api/admin/users/${userId}/message`,{method:'POST',body:JSON.stringify({text:text.value})});if(!result.delivered){status.textContent='Telegram could not deliver this message; it is saved in history.';send.disabled=false;return;}toast('Message sent');await loadAdminUser(userId);}
+    catch(error){status.textContent=error.message;send.disabled=false;}};
+  section.append(form);panel.append(section);
+  try{const result=await api(`/api/admin/users/${userId}/messages`);section.append(node('h4','Message history / ប្រវត្តិសារ'));
+    if(!result.messages.length)section.append(node('p','No messages sent yet.','muted'));
+    for(const message of result.messages){const row=node('div',undefined,'admin-record');row.append(node('strong',`${new Date(message.created_at*1000).toLocaleString()} · ${message.delivered?'Delivered':'Failed'}`),node('small',message.text));section.append(row);}
+  }catch(error){section.append(node('p',error.message,'form-status'));}
 }
 
 $('openAdminConsole').onclick=()=>{showPage('admin');loadAdminConsole();};
@@ -88,6 +194,8 @@ $('toggleAdminMode').onclick=()=>{
 };
 $('adminBack').onclick=()=>showPage('settings');
 $('refreshAdmin').onclick=loadAdminConsole;
+$('refreshAdminDashboard').onclick=loadAdminOverview;
+$('adminChartCurrency').onchange=renderAdminDonut;
 $('addAdminForm').onsubmit=async event=>{
   event.preventDefault();const input=$('newAdminId'),status=$('addAdminStatus'),button=event.submitter||$('addAdminForm').querySelector('button');
   const userId=Number(input.value);if(!Number.isSafeInteger(userId)||userId<=0){status.textContent='Enter a valid Telegram ID.';return;}

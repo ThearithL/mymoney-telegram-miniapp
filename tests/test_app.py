@@ -150,6 +150,40 @@ def test_regular_user_cannot_manage_admins(access_client):
     assert client.put('/api/admin/users/456/access',headers=headers(uid=456),
         json={'status':'approved','confirm':True}).status_code==403
 
+def test_admin_dashboard_and_owner_transaction_crud_and_messaging(access_client):
+    client,calls,_=access_client
+    from app import personal_tables, registered_users, insert, select, func
+    # A registered user can be messaged even before recording any transactions.
+    with client.application.extensions['engine'].begin() as conn:
+        conn.execute(insert(registered_users).values(user_id=456,name='Test user',last_seen=1))
+    dashboard=client.get('/api/admin/overview',headers=headers())
+    assert dashboard.status_code==200
+    assert dashboard.json['user_count']>=2
+    assert set(dashboard.json['statuses'])=={'admin','approved','pending','revoked','not_requested'}
+    assert client.get('/api/admin/overview',headers=headers(uid=456)).status_code==403
+
+    body=payload(request_id='admin-created-record',day=__import__('datetime').date.today().isoformat())
+    created=client.post('/api/admin/users/456/transactions',headers=headers(),json=body)
+    assert created.status_code==201
+    identity=created.json['id']
+    changed={**body,'amount':'30.00','note':'Admin corrected record'}
+    assert client.put(f'/api/admin/users/456/transactions/{identity}',headers=headers(),json=changed).status_code==200
+    assert client.delete(f'/api/admin/users/456/transactions/{identity}',headers=headers()).json['recoverable'] is True
+    engine=client.application.extensions['engine']
+    with engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(personal_tables['trash']).where(
+            personal_tables['trash'].c.user_id==456)).scalar()==1
+
+    sent=client.post('/api/admin/users/456/message',headers=headers(),json={'text':'Hello from MyMoney admin'})
+    assert sent.status_code==200 and sent.json['delivered'] is True
+    assert calls[-1][1]['chat_id']==456 and calls[-1][1]['text']=='Hello from MyMoney admin'
+    history=client.get('/api/admin/users/456/messages',headers=headers())
+    assert history.status_code==200 and history.json['messages'][0]['text']=='Hello from MyMoney admin'
+    assert client.post('/api/admin/users/456/message',headers=headers(),json={'text':' '}).status_code==400
+    assert client.post('/api/admin/admins',headers=headers(),json={'user_id':456,'confirm':True}).status_code==201
+    assert client.post('/api/admin/users/456/message',headers=headers(uid=456),json={'text':'Not owner'}).status_code==403
+    assert client.delete(f'/api/admin/users/456/transactions/{identity}',headers=headers(uid=456)).status_code==403
+
 def test_recent_activity_button_and_command_are_private_and_show_latest_five(access_client):
     client,calls,_=access_client
     for uid, note, amount in [(123, f'Owner record {i}', str(i + 1)) for i in range(6)]:

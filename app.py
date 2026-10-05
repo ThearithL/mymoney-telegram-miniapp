@@ -60,6 +60,10 @@ admin_audit = Table('admin_audit', metadata,
     Column('id', Integer, primary_key=True), Column('admin_id', BigInteger, nullable=False),
     Column('target_id', BigInteger, nullable=False), Column('action', String(20), nullable=False),
     Column('at', BigInteger, nullable=False))
+admin_messages = Table('admin_messages', metadata,
+    Column('id', Integer, primary_key=True), Column('admin_id', BigInteger, nullable=False),
+    Column('target_id', BigInteger, nullable=False), Column('text', Text, nullable=False),
+    Column('delivered', Integer, nullable=False), Column('created_at', BigInteger, nullable=False))
 app_admins = Table('app_admins', metadata,
     Column('user_id', BigInteger, primary_key=True), Column('granted_by', BigInteger, nullable=False),
     Column('created_at', BigInteger, nullable=False))
@@ -417,7 +421,7 @@ def create_app(config=None):
             abort(400, 'Expected a JSON object')
         return body
 
-    def entry(body):
+    def entry(body, user_id=None):
         try:
             kind = body['kind']
             category = body['category']
@@ -431,7 +435,8 @@ def create_app(config=None):
                 custom_table = personal_tables['custom_categories']
                 with engine.connect() as conn:
                     category_kind = conn.execute(select(custom_table.c.kind).where(
-                        custom_table.c.user_id == g.user['id'], custom_table.c.key == category)).scalar_one_or_none()
+                        custom_table.c.user_id == (user_id if user_id is not None else g.user['id']),
+                        custom_table.c.key == category)).scalar_one_or_none()
                 custom = category_kind in (kind, 'both')
             builtin_allowed = (kind == 'income' and category in ('salary', 'other')) or (
                 kind == 'expense' and category in CATEGORIES and category != 'salary')
@@ -482,6 +487,127 @@ def create_app(config=None):
     def require_owner():
         if not admin or g.user['id'] != admin:
             abort(403, 'Only the owner can add or remove admins.')
+
+    def require_known_user(target_id):
+        known = union(select(registered_users.c.user_id), select(access_requests.c.user_id),
+                      select(transactions.c.user_id), select(budgets.c.user_id),
+                      select(app_admins.c.user_id)).subquery()
+        with engine.connect() as conn:
+            if not conn.execute(select(known.c.user_id).where(known.c.user_id == target_id)).first():
+                abort(404, 'User not found.')
+
+    @app.get('/api/admin/overview')
+    @auth
+    def admin_overview():
+        require_admin()
+        known = union(select(registered_users.c.user_id), select(access_requests.c.user_id),
+                      select(transactions.c.user_id), select(budgets.c.user_id),
+                      select(app_admins.c.user_id)).subquery()
+        month = datetime.now(TZ).strftime('%Y-%m')
+        month_start = date.fromisoformat(month + '-01')
+        month_end = date(month_start.year + (month_start.month == 12), month_start.month % 12 + 1, 1)
+        with engine.connect() as conn:
+            ids = conn.execute(select(known.c.user_id)).scalars().all()
+            statuses = conn.execute(select(access_requests.c.user_id, access_requests.c.status)).all()
+            admins = set(conn.execute(select(app_admins.c.user_id)).scalars().all()) | ({admin} if admin else set())
+            record_count = conn.execute(select(func.count()).select_from(transactions)).scalar() or 0
+            monthly_expenses = conn.execute(select(transactions.c.currency,
+                    func.sum(transactions.c.amount)).where(transactions.c.kind == 'expense',
+                    transactions.c.day >= month_start, transactions.c.day < month_end)
+                .group_by(transactions.c.currency)).all()
+            category_totals = conn.execute(select(transactions.c.currency, transactions.c.category,
+                    func.sum(transactions.c.amount)).where(transactions.c.kind == 'expense',
+                    transactions.c.day >= month_start, transactions.c.day < month_end)
+                .group_by(transactions.c.currency, transactions.c.category)).all()
+        status_by_id = dict(statuses)
+        buckets = {'admin': 0, 'approved': 0, 'pending': 0, 'revoked': 0, 'not_requested': 0}
+        for uid in ids:
+            status = 'admin' if uid in admins else status_by_id.get(uid, 'approved' if uid in allowed else 'not_requested')
+            buckets[status if status in buckets else 'not_requested'] += 1
+        return {'month': month, 'user_count': len(ids), 'transaction_count': record_count,
+                'statuses': buckets,
+                'expenses': [{'currency': currency, 'amount': int(amount or 0)} for currency, amount in monthly_expenses],
+                'categories': [{'currency': currency, 'category': category, 'amount': int(amount or 0)}
+                               for currency, category, amount in category_totals]}
+
+    @app.post('/api/admin/users/<int:target_id>/message')
+    @auth
+    def admin_message_user(target_id):
+        require_owner()
+        require_known_user(target_id)
+        body = json_body()
+        message_text = body.get('text')
+        if not isinstance(message_text, str) or not message_text.strip() or len(message_text.strip()) > 1000:
+            abort(400, 'Message must contain 1–1000 characters.')
+        delivered = telegram('sendMessage', {'chat_id': target_id, 'text': message_text.strip()})
+        with engine.begin() as conn:
+            conn.execute(insert(admin_messages).values(admin_id=admin, target_id=target_id,
+                text=message_text.strip(), delivered=int(delivered), created_at=int(time.time())))
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='message_sent' if delivered else 'message_failed', at=int(time.time())))
+        return {'ok': True, 'delivered': delivered}
+
+    @app.get('/api/admin/users/<int:target_id>/messages')
+    @auth
+    def admin_user_messages(target_id):
+        require_owner()
+        require_known_user(target_id)
+        with engine.connect() as conn:
+            rows = conn.execute(select(admin_messages).where(admin_messages.c.target_id == target_id)
+                .order_by(admin_messages.c.id.desc()).limit(20)).mappings().all()
+        return {'messages': [dict(row) for row in rows]}
+
+    @app.post('/api/admin/users/<int:target_id>/transactions')
+    @auth
+    def admin_create_transaction(target_id):
+        require_owner()
+        require_known_user(target_id)
+        body = json_body()
+        values = entry(body, user_id=target_id)
+        key = body.get('request_id', '')
+        if not isinstance(key, str) or not 8 <= len(key) <= 64:
+            abort(400, 'Missing request ID')
+        try:
+            with engine.begin() as conn:
+                result = conn.execute(insert(transactions).values(**values, user_id=target_id, request_id=key))
+                identity = result.inserted_primary_key[0]
+                conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                    action='transaction_create', at=int(time.time())))
+        except IntegrityError:
+            abort(409, 'That request ID already exists. Refresh and try again.')
+        if values['kind'] == 'expense':
+            budget_warning(target_id, values['day'].strftime('%Y-%m'), values['currency'])
+        return {'id': identity}, 201
+
+    @app.put('/api/admin/users/<int:target_id>/transactions/<int:identity>')
+    @auth
+    def admin_edit_transaction(target_id, identity):
+        require_owner()
+        require_known_user(target_id)
+        values = entry(json_body(), user_id=target_id)
+        with engine.begin() as conn:
+            changed = conn.execute(update(transactions).where(transactions.c.id == identity,
+                transactions.c.user_id == target_id).values(**values)).rowcount
+            if not changed:
+                abort(404, 'Transaction not found.')
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='transaction_edit', at=int(time.time())))
+        return {'ok': True}
+
+    @app.delete('/api/admin/users/<int:target_id>/transactions/<int:identity>')
+    @auth
+    def admin_delete_transaction(target_id, identity):
+        require_owner()
+        require_known_user(target_id)
+        with engine.begin() as conn:
+            rows = conn.execute(delete(transactions).where(transactions.c.id == identity,
+                transactions.c.user_id == target_id).returning(*transactions.c)).mappings().all()
+            if not rows:
+                abort(404, 'Transaction not found.')
+            archive_rows(conn, rows, personal_tables)
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='transaction_delete', at=int(time.time())))
+        return {'ok': True, 'recoverable': True}
 
     @app.get('/api/admin/users')
     @auth

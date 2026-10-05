@@ -14,7 +14,9 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Mark each expense as a need or a want. See the split for the selected month and year.
 - Yearly report: income, expenses, net, top spending category, needs/wants split and month-by-month chart. USD/KHR are combined with the saved display rate.
 - Telegram menu shortcuts open the monthly budget, yearly report and savings goals directly.
-- Owner /admin dashboard: users, access controls, records, goals, totals and audit history.
+- Owner admin dashboard: USD/KHR monthly expense donut charts, user/access totals, user records, message history and admin audit.
+- Owner can send a private Telegram message to a selected user and review the delivery history.
+- Owner-only transaction CRUD in the Admin Console: create and edit a user's records; deletes go to that user's recoverable Trash.
 - Request access button, admin Approve/Reject buttons, persistent access decisions in Neon.
 - `/id` works before approval; `/request` submits access; `/requests` recovers pending requests for the owner.
 - `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
@@ -173,7 +175,7 @@ New users send /start and tap Request access, or send /request. The bot displays
 
 Only ADMIN_USER_ID may approve or reject. Callback decisions apply only to pending requests; repeated/stale clicks cannot reverse them. Notifications for the same pending user are throttled to one per minute. If Telegram delivery fails, requests remain saved and the admin can use /requests to retrieve batches of five. Decisions remain saved even if a user blocks the notification; the user can reopen the app to check.
 
-Rejected users cannot automatically reapply. The owner can grant or revoke access through /admin with confirmation. Saved decisions override ALLOWED_USER_IDS. Revoking access preserves records. The owner can review users' transactions, budgets and savings goals through the Telegram admin panel; the Mini App API remains scoped to the signed-in user. Users are informed of owner visibility. Admin financial editing/deletion and bulk broadcasts are not implemented.
+Rejected users cannot automatically reapply. The owner can grant or revoke access through /admin with confirmation. Saved decisions override ALLOWED_USER_IDS. Revoking access preserves records. The owner can review users' transactions, budgets and savings goals through the Telegram admin panel and Mini App. Only the configured owner can edit or add a user's transactions or send direct messages; deleted transactions are archived in the user's Trash for restoration. Admin users cannot use these owner-only actions. Users are informed that the owner/admin can review their financial records.
 
 When upgrading an existing deployment, re-register the webhook with allowed_updates including BOTH message and callback_query. The new setup script/Start Command handles this. A setWebhook success does not by itself prove delivery; inspect getWebhookInfo and service logs if /id does not respond.
 
