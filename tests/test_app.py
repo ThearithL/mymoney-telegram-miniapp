@@ -74,6 +74,82 @@ def test_budget_currency_and_month_isolation(client):
     assert not client.get('/api/data?month=2026-02',headers=headers()).json['budgets']
     assert not client.get('/api/data?month=2026-01',headers=headers(uid=456)).json['budgets']
 
+@pytest.mark.parametrize('currency,amount', [('KHR','0'),('USD','0'),('USD','0.00')])
+def test_monthly_budget_accepts_zero(client,currency,amount):
+    response=client.put('/api/budget',json={'month':'2026-10','currency':currency,'amount':amount},headers=headers())
+    assert response.status_code==200
+    assert response.json['amount']==0
+    saved=client.get('/api/data?month=2026-10',headers=headers()).json['budgets']
+    assert any(row['currency']==currency and row['amount']==0 for row in saved)
+
+def test_monthly_budget_limit_can_be_edited_to_zero_and_back(client):
+    url='/api/budget'
+    save=lambda amount,currency='USD',month='2026-10': client.put(url,
+        json={'month':month,'currency':currency,'amount':amount},headers=headers())
+    assert save('137.00').json['amount']==13700
+    assert save('0').json=={'ok':True,'month':'2026-10','currency':'USD','amount':0}
+    # Editing uses the same month/currency row; it must not create duplicate budgets.
+    assert save('24.50').json['amount']==2450
+    saved=client.get('/api/data?month=2026-10',headers=headers()).json['budgets']
+    usd_rows=[row for row in saved if row['currency']=='USD']
+    assert len(usd_rows)==1 and usd_rows[0]['amount']==2450
+    assert save('0','KHR').json['amount']==0
+    assert save('10','USD','2026-11').json['amount']==1000
+    october=client.get('/api/data?month=2026-10',headers=headers()).json['budgets']
+    assert {row['currency']:row['amount'] for row in october}=={'USD':2450,'KHR':0}
+    assert client.get('/api/data?month=2026-11',headers=headers()).json['budgets'][0]['amount']==1000
+
+@pytest.mark.parametrize('currency,amount', [('USD','-1'),('USD','0.001'),('KHR','1.1'),('USD','NaN')])
+def test_monthly_budget_rejects_invalid_amount_without_changing_saved_limit(client,currency,amount):
+    client.put('/api/budget',json={'month':'2026-10','currency':'USD','amount':'50'},headers=headers())
+    response=client.put('/api/budget',json={'month':'2026-10','currency':currency,'amount':amount},headers=headers())
+    assert response.status_code==400
+    budgets=client.get('/api/data?month=2026-10',headers=headers()).json['budgets']
+    assert {row['currency']:row['amount'] for row in budgets}=={'USD':5000}
+
+def test_zero_budget_does_not_trigger_division_or_false_alert(client,monkeypatch):
+    calls=[]
+    monkeypatch.setattr('app.requests.post',lambda *a,**k:calls.append((a,k)))
+    response=client.put('/api/budget',json={'month':__import__('datetime').date.today().strftime('%Y-%m'),'currency':'USD','amount':'0'},headers=headers())
+    assert response.status_code==200
+    assert calls==[]
+
+def test_owner_can_add_and_remove_admin_in_mini_app(access_client):
+    client,calls,_=access_client
+    added=client.post('/api/admin/admins',headers=headers(),json={'user_id':456,'confirm':True})
+    assert added.status_code==201
+    assert added.json['user_id']==456
+    assert client.get('/api/admin/users',headers=headers()).json['users'][0]['status']=='admin'
+    assert client.get('/api/admin/users/456',headers=headers()).status_code==200
+    assert client.get('/api/admin/users',headers=headers(uid=456)).status_code==200
+    # A promoted admin must see the bot menu entry and be directed to the Mini App console.
+    calls.clear()
+    assert message(client,456,'/start').status_code==200
+    menu_messages=[p for _,p in calls if 'keyboard' in p.get('reply_markup',{})]
+    assert any('🛡 Admin' in str(p['reply_markup']['keyboard']) for p in menu_messages)
+    assert not any('⏳ Requests' in str(p['reply_markup']['keyboard']) for p in menu_messages)
+    assert calls[-1][1]['reply_markup']['inline_keyboard'][0][0]['web_app']['url']=='https://example.com'
+    calls.clear()
+    assert message(client,456,'/admin').status_code==200
+    assert calls[-1][1]['reply_markup']['inline_keyboard'][0][0]['web_app']['url']=='https://example.com'
+    calls.clear()
+    assert callback(client,456,'admin:stats').status_code==200
+    assert calls[-1][1]['reply_markup']['inline_keyboard'][0][0]['web_app']['url']=='https://example.com'
+    assert client.post('/api/admin/admins',headers=headers(uid=456),json={'user_id':789,'confirm':True}).status_code==403
+    removed=client.delete('/api/admin/admins/456',headers=headers())
+    assert removed.status_code==200
+    data=client.get('/api/data?month=2026-01',headers=headers(uid=456))
+    assert data.status_code==200 and data.json['user']['is_admin'] is False
+    calls.clear()
+    message(client,456,'/start')
+    assert not any('🛡 Admin' in str(p.get('reply_markup',{})) for _,p in calls)
+
+def test_regular_user_cannot_manage_admins(access_client):
+    client,_,_ = access_client
+    assert client.get('/api/admin/admins',headers=headers(uid=456)).status_code==403
+    assert client.put('/api/admin/users/456/access',headers=headers(uid=456),
+        json={'status':'approved','confirm':True}).status_code==403
+
 def test_expense_need_want_and_yearly_summary(client):
     essential=payload(request_id='essential-123',amount='25',spending_type='essential')
     wanted=payload(request_id='want-entry-123',amount='10',category='coffee',spending_type='want',day='2026-02-03')
@@ -223,6 +299,27 @@ def test_admin_menu_and_no_privilege_leak(access_client):
     assert calls[-1][1]['text']=='🔒 Admin only.'
     message(client,456,'/admin')
     assert calls[-1][1]['text']=='🔒 Admin only.'
+
+def test_start_sends_english_welcome_and_usage_instructions(access_client):
+    client,calls,_=access_client
+    assert message(client,123,'/start').status_code==200
+    welcome=calls[0][1]['text']
+    assert 'Welcome to MyMoney!' in welcome
+    assert 'How to get started:' in welcome
+    assert 'Request access' in welcome and 'Monthly budget' in welcome
+    assert 'owner/admin can review' in welcome
+    assert 'Savings goals' in welcome and 'all personal features' in welcome
+    assert calls[1][1]['reply_markup']['inline_keyboard'][0][0]['web_app']['url']=='https://example.com'
+
+    calls.clear()
+    assert message(client,456,'/start').status_code==200
+    restricted_welcome=calls[0][1]['text']
+    assert 'Your account needs approval' in restricted_welcome
+    assert 'all personal features' not in restricted_welcome
+    assert calls[1][1]['reply_markup']['inline_keyboard'][0][0]['callback_data']=='request_access'
+    calls.clear()
+    assert message(client,456,'/help').status_code==200
+    assert 'borrowed or lent money' in calls[-1][1]['text']
 
 def test_admin_view_and_revoke_grant_with_single_use_confirmation(access_client):
     client,calls,_=access_client

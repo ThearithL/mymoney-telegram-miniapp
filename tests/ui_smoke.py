@@ -91,6 +91,16 @@ with tempfile.TemporaryDirectory() as temp:
                 page.locator('[data-page="reports"]').click();assert 'No expenses' in page.locator('#donutPanel').inner_text()
                 if width==320:
                     page.locator('[data-page="settings"]').click()
+                    assert page.locator('#adminModeCard').is_visible()
+                    assert page.locator('#adminHint').is_hidden()
+                    page.locator('#toggleAdminMode').click()
+                    assert page.locator('#adminHint').is_visible()
+                    assert page.locator('#adminModeBadge').inner_text()=='Admin mode'
+                    assert page.evaluate('state.user.is_admin') is True
+                    page.locator('#toggleAdminMode').click()
+                    assert page.locator('#adminHint').is_hidden()
+                    assert page.locator('#adminModeBadge').inner_text()=='User mode'
+                    assert page.evaluate('state.user.is_admin') is True
                     page.locator('#profileName').fill('Thearith Personal');page.locator('#profileBio').fill('Student')
                     page.locator('#profileForm button').click()
                     wait_state(page,'() => state.user.name === "Thearith Personal"')

@@ -16,7 +16,7 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, abort, g, jsonify, request, send_from_directory, Response
 from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInteger,
-                        String, Text, Date, UniqueConstraint, select, insert, update, delete, func, text, inspect)
+                        String, Text, Date, UniqueConstraint, select, insert, update, delete, func, text, inspect, union)
 from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
 from personal_features import define_tables, register_features, archive_rows
@@ -60,6 +60,9 @@ admin_audit = Table('admin_audit', metadata,
     Column('id', Integer, primary_key=True), Column('admin_id', BigInteger, nullable=False),
     Column('target_id', BigInteger, nullable=False), Column('action', String(20), nullable=False),
     Column('at', BigInteger, nullable=False))
+app_admins = Table('app_admins', metadata,
+    Column('user_id', BigInteger, primary_key=True), Column('granted_by', BigInteger, nullable=False),
+    Column('created_at', BigInteger, nullable=False))
 
 savings_goals = Table('savings_goals', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False, index=True),
@@ -105,17 +108,19 @@ def validate_init_data(raw, token, now=None):
         abort(401, 'Session expired or invalid. Close and reopen the Mini App from Telegram.')
 
 
-def amount_units(value, currency):
+def amount_units(value, currency, allow_zero=False):
     if currency not in ('USD', 'KHR'):
         abort(400, 'Invalid currency')
     try:
         number = Decimal(str(value))
         scaled = number * (100 if currency == 'USD' else 1)
-        if not scaled.is_finite() or scaled <= 0 or scaled > 10**12 or scaled != scaled.to_integral_value():
+        if (not scaled.is_finite() or scaled < 0 or (scaled == 0 and not allow_zero)
+                or scaled > 10**12 or scaled != scaled.to_integral_value()):
             raise ValueError()
         return int(scaled)
     except (DecimalException, ValueError, TypeError):
-        abort(400, 'Enter a positive amount: whole riel or up to 2 decimal places for USD.')
+        minimum = 'zero or greater' if allow_zero else 'a positive amount'
+        abort(400, f'Enter {minimum}: whole riel or up to 2 decimal places for USD.')
 
 
 def month_value(value):
@@ -150,6 +155,12 @@ def create_app(config=None):
 
     admin = int(app.config['ADMIN_USER_ID'] or 0)
 
+    def is_admin_user(uid):
+        if uid == admin:
+            return True
+        with engine.connect() as conn:
+            return conn.execute(select(app_admins.c.user_id).where(app_admins.c.user_id == uid)).first() is not None
+
     def remember_user(user):
         uid = user.get('id')
         if type(uid) is not int or uid <= 0:
@@ -172,7 +183,7 @@ def create_app(config=None):
             remember_user({'id': uid})
 
     def has_access(uid):
-        if uid == admin:
+        if is_admin_user(uid):
             return True
         with engine.connect() as conn:
             status = conn.execute(select(access_requests.c.status).where(access_requests.c.user_id == uid)).scalar()
@@ -200,8 +211,10 @@ def create_app(config=None):
                 [{'text': '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report'}, {'text': '⚙️ ថវិកាប្រចាំខែ / Monthly budget'}],
                 [{'text': '🎯 គោលដៅសន្សំ / Savings goals'}],
                 [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
-        if uid == admin and admin:
-            rows.append([{'text': '🛡 Admin'}, {'text': '⏳ Requests'}])
+        if is_admin_user(uid):
+            rows.append([{'text': '🛡 Admin'}])
+            if uid == admin and admin:
+                rows[-1].append({'text': '⏳ Requests'})
         elif not has_access(uid):
             rows.insert(0, [{'text': '🔓 Request access'}])
         rows.append([{'text': '✕ បិទ Menu / Close menu'}])
@@ -267,7 +280,7 @@ def create_app(config=None):
         with engine.connect() as conn:
             limit=conn.execute(select(budgets.c.amount).where(budgets.c.user_id==uid,
                 budgets.c.month==month,budgets.c.currency==currency)).scalar()
-            if not limit:
+            if limit is None or limit <= 0:
                 return
             spent=conn.execute(select(func.coalesce(func.sum(transactions.c.amount),0)).where(
                 transactions.c.user_id==uid,transactions.c.kind=='expense',transactions.c.currency==currency,
@@ -439,9 +452,171 @@ def create_app(config=None):
             type_limits = conn.execute(select(spending_budgets).where(spending_budgets.c.user_id == g.user['id'], spending_budgets.c.month == month)).mappings().all()
         with engine.connect() as conn:
             profile_name = conn.execute(select(personal_tables['profiles'].c.name).where(personal_tables['profiles'].c.user_id == g.user['id'])).scalar_one_or_none()
-        return jsonify(user={'name': profile_name or (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
+        return jsonify(user={'name': profile_name or (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': is_admin_user(g.user['id']), 'is_owner': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
                        transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits],
                        spending_budgets=[serialize(r) for r in type_limits])
+
+    def require_admin():
+        if not is_admin_user(g.user['id']):
+            abort(403, 'Admin only.')
+
+    def require_owner():
+        if not admin or g.user['id'] != admin:
+            abort(403, 'Only the owner can add or remove admins.')
+
+    @app.get('/api/admin/users')
+    @auth
+    def admin_users():
+        require_admin()
+        known = union(select(registered_users.c.user_id), select(access_requests.c.user_id),
+                      select(transactions.c.user_id), select(budgets.c.user_id),
+                      select(app_admins.c.user_id)).subquery()
+        with engine.connect() as conn:
+            rows = conn.execute(select(known.c.user_id, registered_users.c.name,
+                    registered_users.c.last_seen, access_requests.c.status,
+                    func.count(transactions.c.id).label('transaction_count'))
+                .select_from(known.outerjoin(registered_users, registered_users.c.user_id == known.c.user_id)
+                    .outerjoin(access_requests, access_requests.c.user_id == known.c.user_id)
+                    .outerjoin(transactions, transactions.c.user_id == known.c.user_id))
+                .group_by(known.c.user_id, registered_users.c.name, registered_users.c.last_seen,
+                          access_requests.c.status).order_by(known.c.user_id)).mappings().all()
+        users = []
+        for row in rows:
+            uid = row['user_id']
+            status = row['status'] or ('approved' if uid in allowed else 'not_requested')
+            users.append({'id': uid, 'name': row['name'] or 'User', 'last_seen': row['last_seen'],
+                          'status': 'admin' if is_admin_user(uid) else status,
+                          'transaction_count': row['transaction_count']})
+        return {'users': users}
+
+    @app.get('/api/admin/users/<int:target_id>')
+    @auth
+    def admin_user_detail(target_id):
+        require_admin()
+        if target_id == admin:
+            abort(400, 'Owner details are already available in your personal dashboard.')
+        if is_admin_user(target_id) and g.user['id'] != admin:
+            abort(403, 'Only the owner can review another admin account.')
+        with engine.connect() as conn:
+            known_ids = union(select(registered_users.c.user_id), select(access_requests.c.user_id),
+                              select(transactions.c.user_id), select(budgets.c.user_id),
+                              select(app_admins.c.user_id)).subquery()
+            known = conn.execute(select(known_ids.c.user_id).where(
+                known_ids.c.user_id == target_id)).first()
+            if not known:
+                abort(404, 'User not found.')
+            user = conn.execute(select(registered_users).where(registered_users.c.user_id == target_id)).mappings().first()
+            access = conn.execute(select(access_requests.c.status).where(access_requests.c.user_id == target_id)).scalar_one_or_none()
+            tx = conn.execute(select(transactions).where(transactions.c.user_id == target_id)
+                .order_by(transactions.c.day.desc(), transactions.c.id.desc()).limit(100)).mappings().all()
+            limits = conn.execute(select(budgets.c.month, budgets.c.currency, budgets.c.amount)
+                .where(budgets.c.user_id == target_id).order_by(budgets.c.month.desc())).mappings().all()
+            totals = conn.execute(select(transactions.c.currency, transactions.c.kind,
+                    func.sum(transactions.c.amount)).where(transactions.c.user_id == target_id)
+                .group_by(transactions.c.currency, transactions.c.kind)).all()
+        status = access or ('approved' if target_id in allowed else 'not_requested')
+        return {'user': {'id': target_id, 'name': (user or {}).get('name', 'User'),
+                    'last_seen': (user or {}).get('last_seen'), 'status': status},
+                'totals': [{'currency': c, 'kind': k, 'amount': int(amount)} for c, k, amount in totals],
+                'budgets': [dict(row) for row in limits],
+                'transactions': [serialize(row) for row in tx]}
+
+    @app.put('/api/admin/users/<int:target_id>/access')
+    @auth
+    def admin_set_access(target_id):
+        require_admin()
+        if is_admin_user(target_id):
+            abort(400, 'Remove administrator role before changing regular access.')
+        if target_id == admin:
+            abort(400, 'The owner cannot change their own access.')
+        body = json_body()
+        status = body.get('status')
+        if status not in ('approved', 'revoked') or body.get('confirm') is not True:
+            abort(400, 'Confirm a valid approve or revoke action.')
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as upsert
+        with engine.begin() as conn:
+            name = conn.execute(select(registered_users.c.name).where(
+                registered_users.c.user_id == target_id)).scalar_one_or_none()
+            if name is None:
+                abort(404, 'User not found.')
+            stmt = upsert(access_requests).values(user_id=target_id, name=name, status=status,
+                request_key=uuid.uuid4().hex, notified_at=0)
+            conn.execute(stmt.on_conflict_do_update(index_elements=['user_id'], set_={
+                'name': name, 'status': status, 'request_key': uuid.uuid4().hex, 'notified_at': 0}))
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='grant' if status == 'approved' else 'revoke', at=int(time.time())))
+        delivered = telegram('sendMessage', {'chat_id': target_id, 'text':
+            '✅ Access approved by the owner. Send /start.' if status == 'approved'
+            else '🔒 Access revoked by the owner. Contact the owner if you need access again.'})
+        return {'ok': True, 'status': status, 'notification_sent': delivered}
+
+    @app.get('/api/admin/admins')
+    @auth
+    def admin_list():
+        require_admin()
+        with engine.connect() as conn:
+            rows = conn.execute(select(app_admins.c.user_id, registered_users.c.name,
+                    app_admins.c.granted_by, app_admins.c.created_at)
+                .select_from(app_admins.outerjoin(registered_users,
+                    registered_users.c.user_id == app_admins.c.user_id))
+                .order_by(app_admins.c.user_id)).mappings().all()
+        return {'admins': [dict(row) | {'name': row['name'] or 'User'} for row in rows],
+                'owner_id': admin, 'can_manage': g.user['id'] == admin}
+
+    @app.post('/api/admin/admins')
+    @auth
+    def admin_add():
+        require_owner()
+        body = json_body()
+        target_id = body.get('user_id')
+        if type(target_id) is not int or target_id <= 0 or target_id > 2**63 - 1 or target_id == admin:
+            abort(400, 'Enter a valid Telegram user ID other than the owner.')
+        if body.get('confirm') is not True:
+            abort(400, 'Confirm adding this administrator.')
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as upsert
+        with engine.begin() as conn:
+            existing = conn.execute(select(app_admins.c.user_id).where(app_admins.c.user_id == target_id)).first()
+            if existing:
+                abort(409, 'This user is already an administrator.')
+            known_name = conn.execute(select(registered_users.c.name).where(
+                registered_users.c.user_id == target_id)).scalar_one_or_none()
+            if not known_name:
+                conn.execute(insert(registered_users).values(user_id=target_id,
+                    name=f'User {target_id}', last_seen=0))
+            conn.execute(insert(app_admins).values(user_id=target_id, granted_by=admin,
+                created_at=int(time.time())))
+            access_stmt = upsert(access_requests).values(user_id=target_id,
+                name=known_name or f'User {target_id}', status='approved',
+                request_key=uuid.uuid4().hex, notified_at=0)
+            conn.execute(access_stmt.on_conflict_do_update(index_elements=['user_id'], set_={
+                'status': 'approved', 'request_key': uuid.uuid4().hex, 'notified_at': 0}))
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='add_admin', at=int(time.time())))
+        delivered = telegram('sendMessage', {'chat_id': target_id, 'text':
+            '🛡 You have been added as a MyMoney administrator. Open the bot and Mini App.'})
+        return {'ok': True, 'user_id': target_id, 'notification_sent': delivered}, 201
+
+    @app.delete('/api/admin/admins/<int:target_id>')
+    @auth
+    def admin_remove(target_id):
+        require_owner()
+        if target_id == admin:
+            abort(400, 'The owner cannot be removed.')
+        with engine.begin() as conn:
+            removed = conn.execute(delete(app_admins).where(app_admins.c.user_id == target_id)).rowcount
+            if not removed:
+                abort(404, 'Administrator not found.')
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='remove_admin', at=int(time.time())))
+        delivered = telegram('sendMessage', {'chat_id': target_id, 'text':
+            'Admin access to MyMoney has been removed. Your regular account access is unchanged.'})
+        return {'ok': True, 'notification_sent': delivered}
 
     @app.get('/api/summary')
     @auth
@@ -474,18 +649,27 @@ def create_app(config=None):
                     func.sum(transactions.c.amount)).where(transactions.c.user_id == g.user['id'],
                     transactions.c.day >= start, transactions.c.day < end)
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
-            monthly = conn.execute(select(func.strftime('%Y-%m', transactions.c.day),
-                    transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
-                .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
-                       transactions.c.day < end)
-                .group_by(func.strftime('%Y-%m', transactions.c.day), transactions.c.currency,
-                          transactions.c.kind)).all() if engine.dialect.name == 'sqlite' else conn.execute(
-                select(func.to_char(transactions.c.day, 'YYYY-MM'), transactions.c.currency,
-                       transactions.c.kind, func.sum(transactions.c.amount))
-                .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
-                       transactions.c.day < end)
-                .group_by(func.to_char(transactions.c.day, 'YYYY-MM'), transactions.c.currency,
-                          transactions.c.kind)).all()
+            if engine.dialect.name == 'sqlite':
+                monthly_rows = conn.execute(select(func.strftime('%Y-%m', transactions.c.day),
+                        transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
+                    .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                           transactions.c.day < end)
+                    .group_by(func.strftime('%Y-%m', transactions.c.day), transactions.c.currency,
+                              transactions.c.kind)).all()
+                monthly = monthly_rows
+            else:
+                # Group by the actual month-start date. Grouping by to_char(day, ...)
+                # while selecting that expression can become a parameterized format
+                # expression in SQLAlchemy/psycopg, which PostgreSQL does not consider
+                # equivalent to the selected expression for GROUP BY validation.
+                monthly_rows = conn.execute(select(func.date_trunc('month', transactions.c.day),
+                        transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
+                    .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                           transactions.c.day < end)
+                    .group_by(func.date_trunc('month', transactions.c.day), transactions.c.currency,
+                              transactions.c.kind)).all()
+                monthly = [(month.strftime('%Y-%m'), currency, kind, amount)
+                           for month, currency, kind, amount in monthly_rows]
             categories = conn.execute(select(transactions.c.category, transactions.c.currency,
                     func.sum(transactions.c.amount)).where(transactions.c.user_id == g.user['id'],
                     transactions.c.day >= start, transactions.c.day < end,
@@ -672,7 +856,7 @@ def create_app(config=None):
         body = json_body()
         month = month_value(body.get('month', ''))
         currency = body.get('currency')
-        amount = amount_units(body.get('amount'), currency)
+        amount = amount_units(body.get('amount'), currency, allow_zero=True)
         # Dialect-native upsert is safe across concurrent requests.
         if engine.dialect.name == 'postgresql':
             from sqlalchemy.dialects.postgresql import insert as upsert
@@ -767,7 +951,13 @@ def create_app(config=None):
                 return {'ok': True}
             if action.startswith('admin:'):
                 telegram('answerCallbackQuery', {'callback_query_id': callback_id})
-                result = admin_ui.render(uid, action)
+                if uid == admin and admin:
+                    result = admin_ui.render(uid, action)
+                elif is_admin_user(uid):
+                    result = {'text': '🛡 Open MyMoney Mini App → Settings → Admin Console. / បើក Mini App → ការកំណត់ → Admin Console។',
+                              'reply_markup': open_buttons()}
+                else:
+                    result = {'text': '🔒 Admin only.'}
                 telegram('sendMessage', {'chat_id': uid, **result})
                 return {'ok': True}
             if action == 'request_access':
@@ -829,11 +1019,30 @@ def create_app(config=None):
         elif command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
         elif command in ('/help', '/privacy'):
-            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\n/allowance — ថ្ងៃនេះអាចចាយបានប៉ុន្មាន? / Spendable today\n/yearly — សង្ខេបប្រចាំឆ្នាំ / Yearly report\n/budget — កំណត់ថវិកាប្រចាំខែ / Monthly limit\n/goals — គោលដៅសន្សំ / Savings goals\nExpense / Income — open entry form\n\n' + privacy
+            payload['text'] = (
+                '💰 MyMoney Help\n\n'
+                '/start — Welcome and usage guide\n'
+                '/menu — Show the bot buttons\n'
+                '/request — Request access if your account is not approved\n'
+                '/id — Show your Telegram ID\n'
+                '/summary — Show this month’s income and expenses\n'
+                '/allowance — Show your suggested daily spending amount\n'
+                '/yearly — Open the yearly report\n'
+                '/budget — Open monthly budget settings\n'
+                '/goals — Open savings goals\n\n'
+                'In the Mini App, you can record income and expenses, manage history, set separate USD/KHR limits, '
+                'view charts, track savings goals, and manage borrowed or lent money.\n\n' + privacy
+            )
         elif command == '/request':
             payload['text'] = request_access(user)
         elif command == '/admin':
-            payload.update(admin_ui.render(uid, 'admin:home'))
+            if uid == admin and admin:
+                payload.update(admin_ui.render(uid, 'admin:home'))
+            elif is_admin_user(uid):
+                payload.update({'text': '🛡 Open MyMoney Mini App → Settings → Admin Console. / បើក Mini App → ការកំណត់ → Admin Console។',
+                                'reply_markup': open_buttons()})
+            else:
+                payload['text'] = '🔒 Admin only.'
         elif command == '/requests':
             if not admin or uid != admin:
                 payload['text'] = '🔒 Admin only.'
@@ -845,9 +1054,31 @@ def create_app(config=None):
                 payload['text'] = f'Pending requests sent: {delivered}/{len(pending)}. Approve/reject these, then send /requests for the next batch.' if pending else '✅ No pending requests.'
         elif command in ('/start', '/menu'):
             payload['reply_markup'] = menu_keyboard(uid)
-            payload['text'] = f'💰 លុយខ្ញុំ / MyMoney\nTelegram ID: {uid}\nជ្រើសប៊ូតុងខាងក្រោម / Choose a button below.\n\n' + privacy
-            if not has_access(uid):
-                payload['text'] += '\n🔒 ចុច Request access ដើម្បីស្នើសុំសិទ្ធិ។'
+            if command == '/start':
+                welcome = (
+                    '💰 Welcome to MyMoney!\n\n'
+                    'Your personal money tracker. You can record income and expenses, edit or restore records, '
+                    'set separate monthly limits in USD and KHR, review charts and yearly reports, '
+                    'track savings goals, and manage money you borrow or lend.\n\n'
+                    'How to get started:\n'
+                    '1. If access is not approved yet, tap “Request access” and wait for the owner.\n'
+                    '2. Tap “Open MyMoney” to launch the Mini App.\n'
+                    '3. Add an expense or income, then choose its amount, currency, category, and date.\n'
+                    '4. Open Monthly budget to set or update a limit for a month and currency.\n'
+                    '5. Use History to edit, delete, or restore records; open Reports for summaries and charts.\n'
+                    '6. Explore Savings goals and Borrow/Lend to track other personal finances.\n\n'
+                    'Send /menu to show the bot buttons again.\n'
+                    'Privacy: the bot owner/admin can review financial records stored in this app.'
+                )
+                if is_admin_user(uid):
+                    welcome += ('\n\n👤 You can use all personal features for your own Telegram account. '
+                                'Switch between User Mode and Admin Mode in Settings. This changes the interface only; '
+                                'your admin permissions remain active.')
+                if not has_access(uid):
+                    welcome += '\n\n🔒 Your account needs approval. Tap “Request access” below.'
+                payload['text'] = welcome
+            else:
+                payload['text'] = '💰 MyMoney menu\nChoose a button below.\n\n' + privacy
             # Reply keyboard uses text buttons; Web App opens via an INLINE button
             # so Telegram supplies signed initData for backend authentication.
             telegram('sendMessage', payload)
