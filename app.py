@@ -37,6 +37,11 @@ budgets = Table('budgets', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False),
     Column('month', String(7), nullable=False), Column('currency', String(3), nullable=False),
     Column('amount', BigInteger, nullable=False), UniqueConstraint('user_id', 'month', 'currency'))
+spending_budgets = Table('spending_type_budgets', metadata,
+    Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False),
+    Column('month', String(7), nullable=False), Column('currency', String(3), nullable=False),
+    Column('spending_type', String(12), nullable=False), Column('amount', BigInteger, nullable=False),
+    UniqueConstraint('user_id', 'month', 'currency', 'spending_type'))
 
 access_requests = Table('access_requests', metadata,
     Column('user_id', BigInteger, primary_key=True),
@@ -431,10 +436,12 @@ def create_app(config=None):
             rows = conn.execute(select(transactions).where(transactions.c.user_id == g.user['id'],
                 transactions.c.day >= start, transactions.c.day < end).order_by(transactions.c.day.desc(), transactions.c.id.desc())).mappings().all()
             limits = conn.execute(select(budgets).where(budgets.c.user_id == g.user['id'], budgets.c.month == month)).mappings().all()
+            type_limits = conn.execute(select(spending_budgets).where(spending_budgets.c.user_id == g.user['id'], spending_budgets.c.month == month)).mappings().all()
         with engine.connect() as conn:
             profile_name = conn.execute(select(personal_tables['profiles'].c.name).where(personal_tables['profiles'].c.user_id == g.user['id'])).scalar_one_or_none()
         return jsonify(user={'name': profile_name or (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
-                       transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits])
+                       transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits],
+                       spending_budgets=[serialize(r) for r in type_limits])
 
     @app.get('/api/summary')
     @auth
@@ -677,6 +684,45 @@ def create_app(config=None):
             conn.execute(stmt)
         budget_warning(g.user['id'],month,currency)
         return {'ok': True, 'month': month, 'currency': currency, 'amount': amount}
+
+    @app.put('/api/spending-budgets')
+    @auth
+    def set_spending_budget():
+        body = json_body()
+        month = month_value(body.get('month', ''))
+        currency = body.get('currency')
+        spending_type = body.get('spending_type')
+        if spending_type not in ('essential', 'want'):
+            abort(400, 'Choose essential or want spending.')
+        amount = amount_units(body.get('amount'), currency)
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as upsert
+        stmt = upsert(spending_budgets).values(user_id=g.user['id'], month=month,
+            currency=currency, spending_type=spending_type, amount=amount)
+        stmt = stmt.on_conflict_do_update(index_elements=['user_id', 'month', 'currency', 'spending_type'],
+            set_={'amount': amount})
+        with engine.begin() as conn:
+            conn.execute(stmt)
+        return {'ok': True, 'month': month, 'currency': currency,
+                'spending_type': spending_type, 'amount': amount}
+
+    @app.delete('/api/spending-budgets')
+    @auth
+    def remove_spending_budget():
+        body = json_body()
+        month = month_value(body.get('month', ''))
+        currency = body.get('currency')
+        spending_type = body.get('spending_type')
+        if currency not in ('USD', 'KHR') or spending_type not in ('essential', 'want'):
+            abort(400, 'Invalid currency or spending type.')
+        with engine.begin() as conn:
+            conn.execute(delete(spending_budgets).where(
+                spending_budgets.c.user_id == g.user['id'], spending_budgets.c.month == month,
+                spending_budgets.c.currency == currency,
+                spending_budgets.c.spending_type == spending_type))
+        return {'ok': True}
 
     @app.get('/api/export')
     @auth
