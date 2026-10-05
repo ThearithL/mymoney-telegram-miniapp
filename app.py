@@ -16,7 +16,7 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, abort, g, jsonify, request, send_from_directory, Response
 from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInteger,
-                        String, Text, Date, UniqueConstraint, select, insert, update, delete, func)
+                        String, Text, Date, UniqueConstraint, select, insert, update, delete, func, text, inspect)
 from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
 from personal_features import define_tables, register_features, archive_rows
@@ -29,6 +29,7 @@ transactions = Table('transactions', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False, index=True),
     Column('kind', String(10), nullable=False), Column('amount', BigInteger, nullable=False),
     Column('currency', String(3), nullable=False), Column('category', String(20), nullable=False),
+    Column('spending_type', String(12)),
     Column('account', String(20), nullable=False), Column('note', String(300), nullable=False),
     Column('day', Date, nullable=False), Column('request_id', String(64), nullable=False),
     UniqueConstraint('user_id', 'request_id'))
@@ -135,6 +136,10 @@ def create_app(config=None):
         url = 'postgresql+psycopg://' + url.split('://', 1)[1]
     engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)
+    # Safe additive migration for existing databases created before spending classification.
+    if 'spending_type' not in {column['name'] for column in inspect(engine).get_columns('transactions')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE transactions ADD COLUMN spending_type VARCHAR(12)'))
     app.extensions['engine'] = engine
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
@@ -187,6 +192,8 @@ def create_app(config=None):
         rows = [[{'text': '💰 MyMoney'}, {'text': '📊 សង្ខេប / Summary'}],
                 [{'text': '💸 ថ្ងៃនេះអាចចាយ / Daily allowance'}],
                 [{'text': '➕ ចំណាយ / Expense'}, {'text': '💵 ចំណូល / Income'}],
+                [{'text': '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report'}, {'text': '⚙️ ថវិកាប្រចាំខែ / Monthly budget'}],
+                [{'text': '🎯 គោលដៅសន្សំ / Savings goals'}],
                 [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
         if uid == admin and admin:
             rows.append([{'text': '🛡 Admin'}, {'text': '⏳ Requests'}])
@@ -395,7 +402,13 @@ def create_app(config=None):
                 raise ValueError()
             if not isinstance(note, str) or len(note) > 300 or day.year < 2000 or day > datetime.now(TZ).date():
                 raise ValueError()
+            spending_type = body.get('spending_type', 'essential' if kind == 'expense' else None)
+            if kind == 'expense' and spending_type not in ('essential', 'want'):
+                raise ValueError()
+            if kind == 'income':
+                spending_type = None
             return dict(kind=kind, category=category, account=account, currency=currency,
+                        spending_type=spending_type,
                         amount=amount_units(body['amount'], currency), day=day, note=note.strip())
         except (KeyError, ValueError, TypeError):
             abort(400, 'Check transaction fields, date and note (maximum 300 characters).')
@@ -437,6 +450,51 @@ def create_app(config=None):
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
         return {'start': start.isoformat(), 'end': today.isoformat(), 'totals': [
             {'currency': c, 'kind': k, 'amount': int(a)} for c,k,a in rows]}
+
+    @app.get('/api/yearly-summary')
+    @auth
+    def yearly_summary():
+        raw_year = request.args.get('year', str(datetime.now(TZ).year))
+        try:
+            year = int(raw_year)
+            if str(year) != raw_year or not 2000 <= year <= 2100:
+                raise ValueError()
+        except (TypeError, ValueError):
+            abort(400, 'Invalid year')
+        start, end = date(year, 1, 1), date(year + 1, 1, 1)
+        with engine.connect() as conn:
+            totals = conn.execute(select(transactions.c.currency, transactions.c.kind,
+                    func.sum(transactions.c.amount)).where(transactions.c.user_id == g.user['id'],
+                    transactions.c.day >= start, transactions.c.day < end)
+                .group_by(transactions.c.currency, transactions.c.kind)).all()
+            monthly = conn.execute(select(func.strftime('%Y-%m', transactions.c.day),
+                    transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
+                .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                       transactions.c.day < end)
+                .group_by(func.strftime('%Y-%m', transactions.c.day), transactions.c.currency,
+                          transactions.c.kind)).all() if engine.dialect.name == 'sqlite' else conn.execute(
+                select(func.to_char(transactions.c.day, 'YYYY-MM'), transactions.c.currency,
+                       transactions.c.kind, func.sum(transactions.c.amount))
+                .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                       transactions.c.day < end)
+                .group_by(func.to_char(transactions.c.day, 'YYYY-MM'), transactions.c.currency,
+                          transactions.c.kind)).all()
+            categories = conn.execute(select(transactions.c.category, transactions.c.currency,
+                    func.sum(transactions.c.amount)).where(transactions.c.user_id == g.user['id'],
+                    transactions.c.day >= start, transactions.c.day < end,
+                    transactions.c.kind == 'expense').group_by(transactions.c.category,
+                    transactions.c.currency)).all()
+            spending = conn.execute(select(func.coalesce(transactions.c.spending_type, 'essential'),
+                    transactions.c.currency, func.sum(transactions.c.amount)).where(
+                    transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                    transactions.c.day < end, transactions.c.kind == 'expense').group_by(
+                    func.coalesce(transactions.c.spending_type, 'essential'),
+                    transactions.c.currency)).all()
+        return {'year': year,
+            'totals': [{'currency': c, 'kind': k, 'amount': int(a)} for c,k,a in totals],
+            'monthly': [{'month': m, 'currency': c, 'kind': k, 'amount': int(a)} for m,c,k,a in monthly],
+            'categories': [{'category': c, 'currency': cur, 'amount': int(a)} for c,cur,a in categories],
+            'spending_types': [{'type': t, 'currency': c, 'amount': int(a)} for t,c,a in spending]}
 
     @app.post('/api/transactions/delete-preview')
     @auth
@@ -625,13 +683,13 @@ def create_app(config=None):
     def export():
         out = io.StringIO()
         writer = csv.writer(out)
-        writer.writerow(['Date', 'Type', 'Amount', 'Currency', 'Category', 'Account', 'Note'])
+        writer.writerow(['Date', 'Type', 'Needs or wants', 'Amount', 'Currency', 'Category', 'Account', 'Note'])
         with engine.connect() as conn:
             for r in conn.execute(select(transactions).where(transactions.c.user_id == g.user['id']).order_by(transactions.c.day)).mappings():
                 note = r['note']
                 if note.lstrip().startswith(('=', '+', '-', '@')) or note.startswith(('\t', '\r', '\n')):
                     note = "'" + note
-                writer.writerow([r['day'], r['kind'], str(Decimal(r['amount']) / (100 if r['currency'] == 'USD' else 1)), r['currency'], r['category'], r['account'], note])
+                writer.writerow([r['day'], r['kind'], r.get('spending_type') or '', str(Decimal(r['amount']) / (100 if r['currency'] == 'USD' else 1)), r['currency'], r['category'], r['account'], note])
         return Response('\ufeff' + out.getvalue(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename="mymoney.csv"'})
 
     @app.post('/telegram/webhook')
@@ -711,6 +769,9 @@ def create_app(config=None):
         aliases = {'💰 MyMoney':'/open','📊 សង្ខេប / Summary':'/summary',
             '💸 ថ្ងៃនេះអាចចាយ / Daily allowance':'/allowance',
             '➕ ចំណាយ / Expense':'/expense','💵 ចំណូល / Income':'/income',
+            '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report':'/yearly',
+            '⚙️ ថវិកាប្រចាំខែ / Monthly budget':'/budget',
+            '🎯 គោលដៅសន្សំ / Savings goals':'/goals',
             '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
             '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
         command = aliases.get(raw, raw.split(' ')[0].split('@')[0])
@@ -722,7 +783,7 @@ def create_app(config=None):
         elif command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
         elif command in ('/help', '/privacy'):
-            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\n/allowance — ថ្ងៃនេះអាចចាយបានប៉ុន្មាន? / Spendable today\nExpense / Income — open entry form\n\n' + privacy
+            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\n/allowance — ថ្ងៃនេះអាចចាយបានប៉ុន្មាន? / Spendable today\n/yearly — សង្ខេបប្រចាំឆ្នាំ / Yearly report\n/budget — កំណត់ថវិកាប្រចាំខែ / Monthly limit\n/goals — គោលដៅសន្សំ / Savings goals\nExpense / Income — open entry form\n\n' + privacy
         elif command == '/request':
             payload['text'] = request_access(user)
         elif command == '/admin':
@@ -756,9 +817,10 @@ def create_app(config=None):
             payload.update(personal_summary(uid, 'month'))
         elif command == '/allowance':
             payload.update(personal_summary(uid, 'allowance'))
-        elif command in ('/open','/expense','/income'):
+        elif command in ('/open','/expense','/income','/budget','/yearly','/goals'):
             payload['text'] = '💰 ចុចបើក / Tap to open'
-            payload['reply_markup'] = open_buttons(command[1:] if command != '/open' else '')
+            action = {'/open':'','/yearly':'reports'}.get(command, command[1:])
+            payload['reply_markup'] = open_buttons(action)
         else:
             payload['text'] = 'ជ្រើសប៊ូតុង Menu ដើម្បីកត់ត្រា / Use the menu buttons. Send /help for instructions.'
         if not telegram('sendMessage', payload):

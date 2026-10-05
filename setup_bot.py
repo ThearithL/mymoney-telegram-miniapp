@@ -36,6 +36,9 @@ commands = [
     {'command':'request','description':'Request access'},
     {'command':'summary','description':'My income and expense summary'},
     {'command':'allowance','description':'See how much I can spend per day'},
+    {'command':'yearly','description':'View my yearly income and expenses'},
+    {'command':'budget','description':'Set my monthly expense limit'},
+    {'command':'goals','description':'Open my savings goals'},
     {'command':'help','description':'Help and privacy information'}]
 call('getMe', {})
 call('setWebhook', {'url':url+'/telegram/webhook','secret_token':secret,'allowed_updates':['message','callback_query']})

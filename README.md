@@ -9,6 +9,10 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Savings goals with manually entered saved totals, progress and edit/delete.
 - Light/dark/system themes, quick-entry drafts, loading animations and retry messages.
 - Budget alerts at 80% and 100% in app and Telegram.
+- Set a monthly expense cap for the selected month and display currency; update it any time, with an in-app progress bar and Telegram warning.
+- Mark each expense as a need or a want. See the split for the selected month and year.
+- Yearly report: income, expenses, net, top spending category, needs/wants split and month-by-month chart. USD/KHR are combined with the saved display rate.
+- Telegram menu shortcuts open the monthly budget, yearly report and savings goals directly.
 - Owner /admin dashboard: users, access controls, records, goals, totals and audit history.
 - Request access button, admin Approve/Reject buttons, persistent access decisions in Neon.
 - `/id` works before approval; `/request` submits access; `/requests` recovers pending requests for the owner.
@@ -74,7 +78,7 @@ Optional extra pre-approved IDs in ALLOWED_USER_IDS are comma-separated. If both
 
 `render.yaml` is also provided for Blueprint deployment; fill its prompted values. The blueprint does not provision a database or choose a service plan. Check the provider's current plan pricing, idle/sleep behavior, storage retention and backup policy before choosing it.
 
-**Do not use SQLite on an ephemeral host filesystem.** Use external PostgreSQL for deployed data. SQLite is only the local default. CSV is an export, not a full database backup (budgets are excluded). Enable database backups and test restoration. Schema changes in later versions need migrations; `create_all` does not migrate existing tables.
+**Do not use SQLite on an ephemeral host filesystem.** Use external PostgreSQL for deployed data. SQLite is only the local default. CSV is an export, not a full database backup (budgets are excluded). Enable database backups and test restoration. The needs/wants feature adds its column to existing transaction tables automatically; other future schema changes may still need migrations because `create_all` does not migrate existing tables.
 
 ## 3. Connect Telegram to the deployed app
 

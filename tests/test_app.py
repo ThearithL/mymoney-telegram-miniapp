@@ -74,6 +74,24 @@ def test_budget_currency_and_month_isolation(client):
     assert not client.get('/api/data?month=2026-02',headers=headers()).json['budgets']
     assert not client.get('/api/data?month=2026-01',headers=headers(uid=456)).json['budgets']
 
+def test_expense_need_want_and_yearly_summary(client):
+    essential=payload(request_id='essential-123',amount='25',spending_type='essential')
+    wanted=payload(request_id='want-entry-123',amount='10',category='coffee',spending_type='want',day='2026-02-03')
+    income=payload(request_id='income-entry-123',kind='income',category='salary',amount='200',spending_type=None,day='2026-02-04')
+    assert client.post('/api/transactions',json=essential,headers=headers()).status_code==201
+    assert client.post('/api/transactions',json=wanted,headers=headers()).status_code==201
+    assert client.post('/api/transactions',json=income,headers=headers()).status_code==201
+    data=client.get('/api/yearly-summary?year=2026',headers=headers()).json
+    assert data['year']==2026
+    assert {row['type']:row['amount'] for row in data['spending_types']}=={'essential':2500,'want':1000}
+    assert {row['kind']:row['amount'] for row in data['totals']}=={'expense':3500,'income':20000}
+    assert {row['month']:row['amount'] for row in data['monthly'] if row['kind']=='expense'}=={'2026-01':2500,'2026-02':1000}
+    assert client.get('/api/yearly-summary?year=1999',headers=headers()).status_code==400
+
+def test_reject_invalid_expense_spending_type(client):
+    data=payload(spending_type='sometimes')
+    assert client.post('/api/transactions',json=data,headers=headers()).status_code==400
+
 def test_csv_formula_safety_and_ownership(client):
     data=payload();data['note']='=HYPERLINK("evil")'
     client.post('/api/transactions',json=data,headers=headers())
