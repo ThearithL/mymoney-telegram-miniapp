@@ -408,7 +408,7 @@ def create_app(config=None):
             if not isinstance(note, str) or len(note) > 300 or day.year < 2000 or day > datetime.now(TZ).date():
                 raise ValueError()
             spending_type = body.get('spending_type', 'essential' if kind == 'expense' else None)
-            if kind == 'expense' and spending_type not in ('essential', 'want'):
+            if kind == 'expense' and spending_type not in ('essential', 'want', 'none'):
                 raise ValueError()
             if kind == 'income':
                 spending_type = None

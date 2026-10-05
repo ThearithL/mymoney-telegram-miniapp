@@ -91,6 +91,11 @@ def test_expense_need_want_and_yearly_summary(client):
 def test_reject_invalid_expense_spending_type(client):
     data=payload(spending_type='sometimes')
     assert client.post('/api/transactions',json=data,headers=headers()).status_code==400
+    data['request_id']='unclassified-entry-123'
+    data['spending_type']='none'
+    assert client.post('/api/transactions',json=data,headers=headers()).status_code==201
+    record=client.get('/api/data?month=2026-01',headers=headers()).json['transactions'][0]
+    assert record['spending_type']=='none'
 
 def test_monthly_needs_and_wants_limits_update_and_are_private(client):
     endpoint='/api/spending-budgets'
