@@ -194,22 +194,22 @@ def create_app(config=None):
         (registered_users, access_requests, transactions, budgets, admin_actions, admin_audit, savings_goals), telegram, app.config)
 
     def menu_keyboard(uid):
-        rows = [[{'text': 'ðŸ’° MyMoney'}, {'text': 'ðŸ“Š ážŸáž„áŸ’ážáŸáž” / Summary'}],
-                [{'text': 'ðŸ’¸ ážáŸ’áž„áŸƒáž“áŸáŸ‡áž¢áž¶áž…áž…áž¶áž™ / Daily allowance'}],
-                [{'text': 'âž• áž…áŸ†ážŽáž¶áž™ / Expense'}, {'text': 'ðŸ’µ áž…áŸ†ážŽáž¼áž› / Income'}],
-                [{'text': 'ðŸ“… ážšáž”áž¶áž™áž€áž¶ážšážŽáŸáž”áŸ’ážšáž…áž¶áŸ†áž†áŸ’áž“áž¶áŸ† / Yearly report'}, {'text': 'âš™ï¸ ážážœáž·áž€áž¶áž”áŸ’ážšáž…áž¶áŸ†ážáŸ‚ / Monthly budget'}],
-                [{'text': 'ðŸŽ¯ áž‚áŸ„áž›ážŠáŸ…ážŸáž“áŸ’ážŸáŸ† / Savings goals'}],
-                [{'text': 'ðŸ†” My ID'}, {'text': 'â“ Help'}]]
+        rows = [[{'text': '💰 MyMoney'}, {'text': '📊 សង្ខេប / Summary'}],
+                [{'text': '💸 ថ្ងៃនេះអាចចាយ / Daily allowance'}],
+                [{'text': '➕ ចំណាយ / Expense'}, {'text': '💵 ចំណូល / Income'}],
+                [{'text': '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report'}, {'text': '⚙️ ថវិកាប្រចាំខែ / Monthly budget'}],
+                [{'text': '🎯 គោលដៅសន្សំ / Savings goals'}],
+                [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
         if uid == admin and admin:
-            rows.append([{'text': 'ðŸ›¡ Admin'}, {'text': 'â³ Requests'}])
+            rows.append([{'text': '🛡 Admin'}, {'text': '⏳ Requests'}])
         elif not has_access(uid):
-            rows.insert(0, [{'text': 'ðŸ”“ Request access'}])
-        rows.append([{'text': 'âœ• áž”áž·áž‘ Menu / Close menu'}])
+            rows.insert(0, [{'text': '🔓 Request access'}])
+        rows.append([{'text': '✕ បិទ Menu / Close menu'}])
         return {'keyboard': rows, 'resize_keyboard': True, 'is_persistent': True}
 
     def open_buttons(action=''):
         suffix = '?action=' + action if action else ''
-        return {'inline_keyboard': [[{'text': 'ðŸ’° áž”áž¾áž€ / Open MyMoney',
+        return {'inline_keyboard': [[{'text': '💰 បើក / Open MyMoney',
             'web_app': {'url': app.config['APP_URL'] + suffix}}]]}
 
     def personal_summary(uid, period):
@@ -226,9 +226,9 @@ def create_app(config=None):
                     transactions.c.user_id == uid, transactions.c.kind == 'expense',
                     transactions.c.day >= month_start, transactions.c.day < next_month
                 ).group_by(transactions.c.currency)).all()
-            text = f'ðŸ’¸ ážáŸ’áž„áŸƒáž“áŸáŸ‡áž¢áž¶áž…áž…áž¶áž™áž”áž¶áž“ / Spendable today\n{month} Â· {days_left} ážáŸ’áž„áŸƒáž“áŸ…ážŸáž›áŸ‹ ážšáž¶áž”áŸ‹áž‘áž¶áŸ†áž„ážáŸ’áž„áŸƒáž“áŸáŸ‡ / days left including today\n'
+            text = f'💸 ថ្ងៃនេះអាចចាយបាន / Spendable today\n{month} · {days_left} ថ្ងៃនៅសល់ រាប់ទាំងថ្ងៃនេះ / days left including today\n'
             if not limits:
-                text += '\náž˜áž·áž“áž‘áž¶áž“áŸ‹áž€áŸ†ážŽážáŸ‹ážážœáž·áž€áž¶ážáŸ‚áž“áŸáŸ‡áž‘áŸáŸ” áž”áž¾áž€ MyMoney ážŠáž¾áž˜áŸ’áž”áž¸áž€áŸ†ážŽážáŸ‹ážážœáž·áž€áž¶áŸ”\nSet a monthly budget in MyMoney first.'
+                text += '\nមិនទាន់កំណត់ថវិកាខែនេះទេ។ បើក MyMoney ដើម្បីកំណត់ថវិកា។\nSet a monthly budget in MyMoney first.'
             else:
                 for currency in ('KHR', 'USD'):
                     limit = next((amount for cur, amount in limits if cur == currency), None)
@@ -237,26 +237,26 @@ def create_app(config=None):
                     spent = next((amount or 0 for cur, amount in expenses if cur == currency), 0)
                     remaining = max(0, limit - spent)
                     daily = remaining // days_left
-                    text += f'\n{currency}\náž“áŸ…ážŸáž›áŸ‹ / Left: {display_money(remaining,currency)}\nážáŸ’áž„áŸƒáž“áŸáŸ‡áž¢áž¶áž…áž…áž¶áž™ / Daily amount: {display_money(daily,currency)}'
+                    text += f'\n{currency}\nនៅសល់ / Left: {display_money(remaining,currency)}\nថ្ងៃនេះអាចចាយ / Daily amount: {display_money(daily,currency)}'
                     if remaining == 0:
-                        text += '\náž”áž¶áž“áž”áŸ’ážšáž¾ážážœáž·áž€áž¶ážáŸ‚áž“áŸáŸ‡áž¢ážŸáŸ‹áž áž¾áž™ / Monthly budget used.'
+                        text += '\nបានប្រើថវិកាខែនេះអស់ហើយ / Monthly budget used.'
             return {'text': text, 'reply_markup': open_buttons()}
         start = today if period == 'today' else today - timedelta(days=today.weekday()) if period == 'week' else today.replace(day=1)
         with engine.connect() as conn:
             totals = conn.execute(select(transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
                 .where(transactions.c.user_id == uid, transactions.c.day >= start, transactions.c.day <= today)
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
-        text = f'ðŸ“Š ážŸáž„áŸ’ážáŸáž” / Summary\n{start} â†’ {today}\n'
+        text = f'📊 សង្ខេប / Summary\n{start} → {today}\n'
         for currency in ('KHR', 'USD'):
             income = next((amount for cur, kind, amount in totals if cur == currency and kind == 'income'), 0)
             expense = next((amount for cur, kind, amount in totals if cur == currency and kind == 'expense'), 0)
-            text += f'\n{currency}\náž…áŸ†ážŽáž¼áž› / Income: {display_money(income,currency)}\náž…áŸ†ážŽáž¶áž™ / Expenses: {display_money(expense,currency)}\nNet: {display_money(income-expense,currency)}\n'
+            text += f'\n{currency}\nចំណូល / Income: {display_money(income,currency)}\nចំណាយ / Expenses: {display_money(expense,currency)}\nNet: {display_money(income-expense,currency)}\n'
         return {'text': text, 'reply_markup': {'inline_keyboard': [[
-            {'text': 'ážáŸ’áž„áŸƒáž“áŸáŸ‡ / Today', 'callback_data': 'summary:today'},
-            {'text': 'ážŸáž”áŸ’ážŠáž¶áž áŸ / Week', 'callback_data': 'summary:week'},
-            {'text': 'ážáŸ‚ / Month', 'callback_data': 'summary:month'}],
-            [{'text': 'ðŸ’¸ ážáŸ’áž„áŸƒáž“áŸáŸ‡áž¢áž¶áž…áž…áž¶áž™ / Spendable today', 'callback_data': 'summary:allowance'}],
-            [{'text': 'ðŸ“ˆ áž€áŸ’ážšáž¶áž áŸ’ážœ / Charts', 'web_app': {'url': app.config['APP_URL']}}]]}}
+            {'text': 'ថ្ងៃនេះ / Today', 'callback_data': 'summary:today'},
+            {'text': 'សប្ដាហ៍ / Week', 'callback_data': 'summary:week'},
+            {'text': 'ខែ / Month', 'callback_data': 'summary:month'}],
+            [{'text': '💸 ថ្ងៃនេះអាចចាយ / Spendable today', 'callback_data': 'summary:allowance'}],
+            [{'text': '📈 ក្រាហ្វ / Charts', 'web_app': {'url': app.config['APP_URL']}}]]}}
 
     def budget_warning(uid, month, currency):
         # Notifications only concern the current month, never historical imports.
@@ -285,8 +285,8 @@ def create_app(config=None):
                 alert_id=conn.execute(insert(budget_alerts).values(user_id=uid,month=month,currency=currency,level=level)).inserted_primary_key[0]
         except IntegrityError:
             return
-        title='ðŸš¨ ážŠáž›áŸ‹ áž¬áž›áž¾ážŸážážœáž·áž€áž¶ / Budget reached or exceeded' if level==100 else 'âš ï¸ áž”áŸ’ážšáž¾ážážœáž·áž€áž¶ážŠáž›áŸ‹ 80% / Budget usage reached 80%'
-        sent=telegram('sendMessage',{'chat_id':uid,'text':f'{title}\n{month}\náž…áŸ†ážŽáž¶áž™ / Spent: {display_money(spent,currency)}\nážážœáž·áž€áž¶ / Limit: {display_money(limit,currency)}',
+        title='🚨 ដល់ ឬលើសថវិកា / Budget reached or exceeded' if level==100 else '⚠️ ប្រើថវិកាដល់ 80% / Budget usage reached 80%'
+        sent=telegram('sendMessage',{'chat_id':uid,'text':f'{title}\n{month}\nចំណាយ / Spent: {display_money(spent,currency)}\nថវិកា / Limit: {display_money(limit,currency)}',
             'reply_markup':open_buttons()})
         if not sent:
             with engine.begin() as conn:
@@ -295,21 +295,21 @@ def create_app(config=None):
     def access_buttons(row):
         key = row['request_key']
         return {'inline_keyboard': [[
-            {'text': 'âœ… áž¢áž“áž»áž‰áŸ’áž‰áž¶áž / Approve', 'callback_data': 'approve:' + key},
-            {'text': 'âŒ áž”ážŠáž·ážŸáŸáž’ / Reject', 'callback_data': 'reject:' + key}]]}
+            {'text': '✅ អនុញ្ញាត / Approve', 'callback_data': 'approve:' + key},
+            {'text': '❌ បដិសេធ / Reject', 'callback_data': 'reject:' + key}]]}
 
     def notify_admin(row):
         return telegram('sendMessage', {
             'chat_id': admin,
-            'text': f"ðŸ”“ ážŸáŸ†ážŽáž¾áž…áž¼áž›áž”áŸ’ážšáž¾ / Access request\nážˆáŸ’áž˜áŸ„áŸ‡ / Name: {row['name']}\nTelegram ID: {row['user_id']}",
+            'text': f"🔓 សំណើចូលប្រើ / Access request\nឈ្មោះ / Name: {row['name']}\nTelegram ID: {row['user_id']}",
             'reply_markup': access_buttons(row)})
 
     def request_access(user):
         uid = user['id']
         if has_access(uid):
-            return 'âœ… áž¢áŸ’áž“áž€áž˜áž¶áž“ážŸáž·áž‘áŸ’áž’áž·ážšáž½áž…áž áž¾áž™ / Already allowed. Send /start.'
+            return '✅ អ្នកមានសិទ្ធិរួចហើយ / Already allowed. Send /start.'
         if not admin:
-            return 'âš™ï¸ Admin not configured. Send /id and contact the owner.'
+            return '⚙️ Admin not configured. Send /id and contact the owner.'
         name = str(user.get('first_name', 'User'))[:200]
         if engine.dialect.name == 'postgresql':
             from sqlalchemy.dialects.postgresql import insert as upsert
@@ -321,9 +321,9 @@ def create_app(config=None):
                 ).on_conflict_do_nothing(index_elements=['user_id']))
             row = conn.execute(select(access_requests).where(access_requests.c.user_id == uid)).mappings().one()
             if row['status'] in ('rejected', 'revoked'):
-                return 'âŒ ážŸáŸ†ážŽáž¾ážáŸ’ážšáž¼ážœáž”áž¶áž“áž”ážŠáž·ážŸáŸáž’ / Request rejected. Contact the owner.'
+                return '❌ សំណើត្រូវបានបដិសេធ / Request rejected. Contact the owner.'
             if row['status'] == 'approved':
-                return 'âœ… áž¢áŸ’áž“áž€áž˜áž¶áž“ážŸáž·áž‘áŸ’áž’áž·ážšáž½áž…áž áž¾áž™ / Already allowed. Send /start.'
+                return '✅ អ្នកមានសិទ្ធិរួចហើយ / Already allowed. Send /start.'
             now = int(time.time())
             # Atomic claim prevents repeated taps/concurrent workers from spamming admin.
             claimed = conn.execute(update(access_requests).where(
@@ -333,8 +333,8 @@ def create_app(config=None):
             with engine.begin() as conn:
                 conn.execute(update(access_requests).where(access_requests.c.user_id == uid,
                     access_requests.c.notified_at == now).values(notified_at=0))
-            return 'â³ ážŸáŸ†ážŽáž¾áž”áž¶áž“ážšáž€áŸ’ážŸáž¶áž‘áž»áž€ / Request saved, but admin notification failed. Admin can send /requests.'
-        return 'â³ ážŸáŸ†ážŽáž¾áž”áž¶áž“ážšáž€áŸ’ážŸáž¶áž‘áž»áž€áŸ” ážŸáž¼áž˜ážšáž„áŸ‹áž…áž¶áŸ† Admin / Request pending admin approval.'
+            return '⏳ សំណើបានរក្សាទុក / Request saved, but admin notification failed. Admin can send /requests.'
+        return '⏳ សំណើបានរក្សាទុក។ សូមរង់ចាំ Admin / Request pending admin approval.'
 
     def auth(fn):
         @wraps(fn)
@@ -347,7 +347,7 @@ def create_app(config=None):
             g.user = validate_init_data(header[4:], app.config['BOT_TOKEN'])
             remember_user(g.user)
             if not has_access(g.user['id']):
-                abort(403, 'Access disabled. Close the Mini App and send /request to the bot. ážŸáž¼áž˜áž•áŸ’áž‰áž¾ /request áž‘áŸ… BotáŸ”')
+                abort(403, 'Access disabled. Close the Mini App and send /request to the bot. សូមផ្ញើ /request ទៅ Bot។')
             return fn(*args, **kwargs)
         return wrapped
 
@@ -474,27 +474,18 @@ def create_app(config=None):
                     func.sum(transactions.c.amount)).where(transactions.c.user_id == g.user['id'],
                     transactions.c.day >= start, transactions.c.day < end)
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
-            if engine.dialect.name == 'sqlite':
-                monthly_rows = conn.execute(select(func.strftime('%Y-%m', transactions.c.day),
-                        transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
-                    .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
-                           transactions.c.day < end)
-                    .group_by(func.strftime('%Y-%m', transactions.c.day), transactions.c.currency,
-                              transactions.c.kind)).all()
-                monthly = monthly_rows
-            else:
-                # Group by the actual month-start date. Grouping by to_char(day, ...)
-                # while selecting that expression can become a parameterized format
-                # expression in SQLAlchemy/psycopg, which PostgreSQL does not consider
-                # equivalent to the selected expression for GROUP BY validation.
-                monthly_rows = conn.execute(select(func.date_trunc('month', transactions.c.day),
-                        transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
-                    .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
-                           transactions.c.day < end)
-                    .group_by(func.date_trunc('month', transactions.c.day), transactions.c.currency,
-                              transactions.c.kind)).all()
-                monthly = [(month.strftime('%Y-%m'), currency, kind, amount)
-                           for month, currency, kind, amount in monthly_rows]
+            monthly = conn.execute(select(func.strftime('%Y-%m', transactions.c.day),
+                    transactions.c.currency, transactions.c.kind, func.sum(transactions.c.amount))
+                .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                       transactions.c.day < end)
+                .group_by(func.strftime('%Y-%m', transactions.c.day), transactions.c.currency,
+                          transactions.c.kind)).all() if engine.dialect.name == 'sqlite' else conn.execute(
+                select(func.to_char(transactions.c.day, 'YYYY-MM'), transactions.c.currency,
+                       transactions.c.kind, func.sum(transactions.c.amount))
+                .where(transactions.c.user_id == g.user['id'], transactions.c.day >= start,
+                       transactions.c.day < end)
+                .group_by(func.to_char(transactions.c.day, 'YYYY-MM'), transactions.c.currency,
+                          transactions.c.kind)).all()
             categories = conn.execute(select(transactions.c.category, transactions.c.currency,
                     func.sum(transactions.c.amount)).where(transactions.c.user_id == g.user['id'],
                     transactions.c.day >= start, transactions.c.day < end,
@@ -522,7 +513,7 @@ def create_app(config=None):
         if scope == 'selected':
             requested = body.get('ids')
             if not isinstance(requested, list) or not 1 <= len(requested) <= 1000 or any(type(i) is not int or i <= 0 for i in requested):
-                abort(400, 'Select 1â€“1000 valid entries.')
+                abort(400, 'Select 1–1000 valid entries.')
             requested = set(requested)
             query = query.where(transactions.c.id.in_(requested))
         elif scope != 'all':
@@ -574,7 +565,7 @@ def create_app(config=None):
         title = body.get('title')
         currency = body.get('currency')
         if not isinstance(title,str) or not title.strip() or len(title)>80:
-            abort(400,'Goal title must have 1â€“80 characters.')
+            abort(400,'Goal title must have 1–80 characters.')
         target = amount_units(body.get('target'), currency)
         raw_saved = body.get('saved')
         try:
@@ -771,7 +762,7 @@ def create_app(config=None):
             if action.startswith('summary:'):
                 telegram('answerCallbackQuery', {'callback_query_id': callback_id})
                 period = action.split(':', 1)[1]
-                payload = personal_summary(uid, period) if has_access(uid) and period in ('today','week','month','allowance') else {'text': 'ðŸ”’ Send /request to request access.'}
+                payload = personal_summary(uid, period) if has_access(uid) and period in ('today','week','month','allowance') else {'text': '🔒 Send /request to request access.'}
                 telegram('sendMessage', {'chat_id': uid, **payload})
                 return {'ok': True}
             if action.startswith('admin:'):
@@ -805,10 +796,10 @@ def create_app(config=None):
                 return {'ok': True}
             telegram('answerCallbackQuery', {'callback_query_id': callback_id, 'text': status.capitalize()})
             delivered = telegram('sendMessage', {'chat_id': row['user_id'], 'text':
-                'âœ… áž”áž¶áž“áž¢áž“áž»áž‰áŸ’áž‰áž¶áž / Access approved! Send /start and reopen MyMoney.' if status == 'approved'
-                else 'âŒ ážŸáŸ†ážŽáž¾ážáŸ’ážšáž¼ážœáž”áž¶áž“áž”ážŠáž·ážŸáŸáž’ / Access request rejected.'})
+                '✅ បានអនុញ្ញាត / Access approved! Send /start and reopen MyMoney.' if status == 'approved'
+                else '❌ សំណើត្រូវបានបដិសេធ / Access request rejected.'})
             telegram('editMessageText', {'chat_id': admin, 'message_id': message['message_id'],
-                'text': f"{status.upper()} â€” {row['name']}\nTelegram ID: {row['user_id']}" +
+                'text': f"{status.upper()} — {row['name']}\nTelegram ID: {row['user_id']}" +
                 ('' if delivered else '\nNotification failed; access decision is saved.'),
                 'reply_markup': {'inline_keyboard': []}})
             return {'ok': True}
@@ -821,63 +812,63 @@ def create_app(config=None):
         uid = user.get('id')
         remember_user(user)
         raw = message.get('text', '').strip()
-        aliases = {'ðŸ’° MyMoney':'/open','ðŸ“Š ážŸáž„áŸ’ážáŸáž” / Summary':'/summary',
-            'ðŸ’¸ ážáŸ’áž„áŸƒáž“áŸáŸ‡áž¢áž¶áž…áž…áž¶áž™ / Daily allowance':'/allowance',
-            'âž• áž…áŸ†ážŽáž¶áž™ / Expense':'/expense','ðŸ’µ áž…áŸ†ážŽáž¼áž› / Income':'/income',
-            'ðŸ“… ážšáž”áž¶áž™áž€áž¶ážšážŽáŸáž”áŸ’ážšáž…áž¶áŸ†áž†áŸ’áž“áž¶áŸ† / Yearly report':'/yearly',
-            'âš™ï¸ ážážœáž·áž€áž¶áž”áŸ’ážšáž…áž¶áŸ†ážáŸ‚ / Monthly budget':'/budget',
-            'ðŸŽ¯ áž‚áŸ„áž›ážŠáŸ…ážŸáž“áŸ’ážŸáŸ† / Savings goals':'/goals',
-            'ðŸ†” My ID':'/id','â“ Help':'/help','ðŸ›¡ Admin':'/admin','â³ Requests':'/requests',
-            'ðŸ”“ Request access':'/request', 'âœ• áž”áž·áž‘ Menu / Close menu':'/closemenu'}
+        aliases = {'💰 MyMoney':'/open','📊 សង្ខេប / Summary':'/summary',
+            '💸 ថ្ងៃនេះអាចចាយ / Daily allowance':'/allowance',
+            '➕ ចំណាយ / Expense':'/expense','💵 ចំណូល / Income':'/income',
+            '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report':'/yearly',
+            '⚙️ ថវិកាប្រចាំខែ / Monthly budget':'/budget',
+            '🎯 គោលដៅសន្សំ / Savings goals':'/goals',
+            '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
+            '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
         command = aliases.get(raw, raw.split(' ')[0].split('@')[0])
         payload = {'chat_id': chat['id']}
-        privacy = 'áž¯áž€áž‡áž“áž—áž¶áž–áŸ– Admin áž¢áž¶áž…áž˜áž¾áž›áž‘áž·áž“áŸ’áž“áž“áŸáž™áž áž·ážšáž‰áŸ’áž‰ážœážáŸ’ážáž»áž€áŸ’áž“áž»áž„ Bot áž“áŸáŸ‡áŸ” / Privacy: the owner/admin can review your recorded transactions and budgets.'
+        privacy = 'ឯកជនភាព៖ Admin អាចមើលទិន្នន័យហិរញ្ញវត្ថុក្នុង Bot នេះ។ / Privacy: the owner/admin can review your recorded transactions and budgets.'
         if command == '/closemenu':
-            payload['text'] = 'áž”áž¶áž“áž”áž·áž‘ MenuáŸ” áž•áŸ’áž‰áž¾ /menu ážŠáž¾áž˜áŸ’áž”áž¸áž”áž¾áž€ážœáž·áž‰áŸ” / Menu closed. Send /menu to reopen.'
+            payload['text'] = 'បានបិទ Menu។ ផ្ញើ /menu ដើម្បីបើកវិញ។ / Menu closed. Send /menu to reopen.'
             payload['reply_markup'] = {'remove_keyboard': True}
         elif command == '/id':
             payload['text'] = f'Telegram ID: {uid}'
         elif command in ('/help', '/privacy'):
-            payload['text'] = 'ðŸ’° MyMoney\n/start /menu â€” áž”áž„áŸ’áž áž¶áž‰áž”áŸŠáž¼ážáž»áž„ / Show buttons\n/id â€” Telegram ID\n/request â€” ážŸáŸ’áž“áž¾ážŸáž»áŸ†áž…áž¼áž›áž”áŸ’ážšáž¾ / Request access\n/summary â€” ážŸáž„áŸ’ážáŸáž” / Summary\n/allowance â€” ážáŸ’áž„áŸƒáž“áŸáŸ‡áž¢áž¶áž…áž…áž¶áž™áž”áž¶áž“áž”áŸ‰áž»áž“áŸ’áž˜áž¶áž“? / Spendable today\n/yearly â€” ážŸáž„áŸ’ážáŸáž”áž”áŸ’ážšáž…áž¶áŸ†áž†áŸ’áž“áž¶áŸ† / Yearly report\n/budget â€” áž€áŸ†ážŽážáŸ‹ážážœáž·áž€áž¶áž”áŸ’ážšáž…áž¶áŸ†ážáŸ‚ / Monthly limit\n/goals â€” áž‚áŸ„áž›ážŠáŸ…ážŸáž“áŸ’ážŸáŸ† / Savings goals\nExpense / Income â€” open entry form\n\n' + privacy
+            payload['text'] = '💰 MyMoney\n/start /menu — បង្ហាញប៊ូតុង / Show buttons\n/id — Telegram ID\n/request — ស្នើសុំចូលប្រើ / Request access\n/summary — សង្ខេប / Summary\n/allowance — ថ្ងៃនេះអាចចាយបានប៉ុន្មាន? / Spendable today\n/yearly — សង្ខេបប្រចាំឆ្នាំ / Yearly report\n/budget — កំណត់ថវិកាប្រចាំខែ / Monthly limit\n/goals — គោលដៅសន្សំ / Savings goals\nExpense / Income — open entry form\n\n' + privacy
         elif command == '/request':
             payload['text'] = request_access(user)
         elif command == '/admin':
             payload.update(admin_ui.render(uid, 'admin:home'))
         elif command == '/requests':
             if not admin or uid != admin:
-                payload['text'] = 'ðŸ”’ Admin only.'
+                payload['text'] = '🔒 Admin only.'
             else:
                 with engine.connect() as conn:
                     pending = conn.execute(select(access_requests).where(
                         access_requests.c.status == 'pending').order_by(access_requests.c.user_id).limit(5)).mappings().all()
                 delivered = sum(bool(notify_admin(row)) for row in pending)
-                payload['text'] = f'Pending requests sent: {delivered}/{len(pending)}. Approve/reject these, then send /requests for the next batch.' if pending else 'âœ… No pending requests.'
+                payload['text'] = f'Pending requests sent: {delivered}/{len(pending)}. Approve/reject these, then send /requests for the next batch.' if pending else '✅ No pending requests.'
         elif command in ('/start', '/menu'):
             payload['reply_markup'] = menu_keyboard(uid)
-            payload['text'] = f'ðŸ’° áž›áž»áž™ážáŸ’áž‰áž»áŸ† / MyMoney\nTelegram ID: {uid}\náž‡áŸ’ážšáž¾ážŸáž”áŸŠáž¼ážáž»áž„ážáž¶áž„áž€áŸ’ážšáŸ„áž˜ / Choose a button below.\n\n' + privacy
+            payload['text'] = f'💰 លុយខ្ញុំ / MyMoney\nTelegram ID: {uid}\nជ្រើសប៊ូតុងខាងក្រោម / Choose a button below.\n\n' + privacy
             if not has_access(uid):
-                payload['text'] += '\nðŸ”’ áž…áž»áž… Request access ážŠáž¾áž˜áŸ’áž”áž¸ážŸáŸ’áž“áž¾ážŸáž»áŸ†ážŸáž·áž‘áŸ’áž’áž·áŸ”'
+                payload['text'] += '\n🔒 ចុច Request access ដើម្បីស្នើសុំសិទ្ធិ។'
             # Reply keyboard uses text buttons; Web App opens via an INLINE button
             # so Telegram supplies signed initData for backend authentication.
             telegram('sendMessage', payload)
             if has_access(uid):
-                payload = {'chat_id': uid, 'text': 'ðŸ’° áž”áž¾áž€áž€áž˜áŸ’áž˜ážœáž·áž’áž¸ / Open your Mini App', 'reply_markup': open_buttons()}
+                payload = {'chat_id': uid, 'text': '💰 បើកកម្មវិធី / Open your Mini App', 'reply_markup': open_buttons()}
             else:
-                payload = {'chat_id': uid, 'text': 'ðŸ”“ ážŸáŸ’áž“áž¾ážŸáž»áŸ†áž…áž¼áž›áž”áŸ’ážšáž¾ / Request access', 'reply_markup': {
-                    'inline_keyboard': [[{'text':'ðŸ”“ Request access','callback_data':'request_access'}]]}}
+                payload = {'chat_id': uid, 'text': '🔓 ស្នើសុំចូលប្រើ / Request access', 'reply_markup': {
+                    'inline_keyboard': [[{'text':'🔓 Request access','callback_data':'request_access'}]]}}
         elif not has_access(uid):
-            payload['text'] = f'ðŸ”’ Access disabled. Telegram ID: {uid}\n' + privacy
-            payload['reply_markup'] = {'inline_keyboard': [[{'text':'ðŸ”“ Request access','callback_data':'request_access'}]]}
+            payload['text'] = f'🔒 Access disabled. Telegram ID: {uid}\n' + privacy
+            payload['reply_markup'] = {'inline_keyboard': [[{'text':'🔓 Request access','callback_data':'request_access'}]]}
         elif command == '/summary':
             payload.update(personal_summary(uid, 'month'))
         elif command == '/allowance':
             payload.update(personal_summary(uid, 'allowance'))
         elif command in ('/open','/expense','/income','/budget','/yearly','/goals'):
-            payload['text'] = 'ðŸ’° áž…áž»áž…áž”áž¾áž€ / Tap to open'
+            payload['text'] = '💰 ចុចបើក / Tap to open'
             action = {'/open':'','/yearly':'reports'}.get(command, command[1:])
             payload['reply_markup'] = open_buttons(action)
         else:
-            payload['text'] = 'áž‡áŸ’ážšáž¾ážŸáž”áŸŠáž¼ážáž»áž„ Menu ážŠáž¾áž˜áŸ’áž”áž¸áž€ážáŸ‹ážáŸ’ážšáž¶ / Use the menu buttons. Send /help for instructions.'
+            payload['text'] = 'ជ្រើសប៊ូតុង Menu ដើម្បីកត់ត្រា / Use the menu buttons. Send /help for instructions.'
         if not telegram('sendMessage', payload):
             return {'error': 'Telegram delivery failed'}, 502
         return {'ok': True}
