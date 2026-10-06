@@ -23,8 +23,8 @@ Object.assign(km, {
   adminHelp:'បើក Chat របស់ Bot ហើយចុច Admin ឬផ្ញើ /admin ដើម្បីគ្រប់គ្រងអ្នកប្រើ និងមើលទិន្នន័យ។',
   privacyHelp:'អ្នកប្រើផ្សេងមិនអាចមើលទិន្នន័យអ្នកបានទេ។ ម្ចាស់ Bot/Admin អាចមើលកំណត់ត្រាចំណូល ចំណាយ និងថវិកា។ App មិនភ្ជាប់ធនាគារទេ។'
 });
-Object.assign(en,{goals:'Savings',newGoal:'+ New goal',goalsHelp:'Track savings with add and withdraw entries. Savings history is separate and never creates expenses.',goalName:'Goal name',goalTarget:'Target amount',goalSaved:'Total saved',deleteGoal:'Delete goal',emptyGoals:'Your next goal starts here. Add a laptop, tuition or travel fund.',appearance:'Appearance',system:'Use device setting',light:'Light',dark:'Dark',fullscreen:'Fullscreen',retry:'Try again',greetingTag:'Small entries. A clearer picture.',welcome:'Hello',saving:'Saving…',fullscreenUnavailable:'Fullscreen is unavailable in this Telegram client.',goalComplete:'Goal reached!',goalRemaining:'Left to save',goalEstimate:'Estimated time',goalNoEstimate:'Add savings for an estimate',goalDays:'days',goalEntryAmount:'Amount to add/withdraw',addSavings:'＋ Add money',withdrawSavings:'− Withdraw',goalHistory:'Savings history',goalNoHistory:'No savings activity yet.',goalAddDone:'Savings added.',goalWithdrawDone:'Savings withdrawn.',goalAdd:'Added',goalWithdraw:'Withdrawn',goalOpening:'Starting balance',goalAdjustUp:'Manual increase',goalAdjustDown:'Manual decrease',confirmGoalDelete:'Delete this savings goal? Your expense history will be kept.'});
-Object.assign(km,{goals:'សន្សំ',newGoal:'＋ គោលដៅថ្មី',goalsHelp:'បន្ថែម ឬដកប្រាក់សន្សំ ហើយមើលប្រវត្តិបាន។ វាមិនបង្កើត ឬប្ដូរកំណត់ត្រាចំណាយទេ។',goalName:'ឈ្មោះគោលដៅ',goalTarget:'គោលដៅប្រាក់',goalSaved:'សន្សំបានសរុប',deleteGoal:'លុបគោលដៅ',emptyGoals:'ចាប់ផ្ដើមគោលដៅថ្មី៖ Laptop ថ្លៃសាលា ឬដំណើរកម្សាន្ត។',appearance:'រូបរាង',system:'តាមឧបករណ៍',light:'ភ្លឺ',dark:'ងងឹត',fullscreen:'ពេញអេក្រង់',retry:'ព្យាយាមម្ដងទៀត',greetingTag:'កត់ត្រាបន្តិច រៀបចំបានច្បាស់',welcome:'សួស្ដី',saving:'កំពុងរក្សាទុក…',fullscreenUnavailable:'Telegram នេះមិនអាចបើកពេញអេក្រង់បានទេ។',goalComplete:'សម្រេចគោលដៅហើយ!',goalRemaining:'នៅខ្វះ',goalEstimate:'ប៉ាន់ស្មានរយៈពេល',goalNoEstimate:'បន្ថែមប្រាក់សន្សំ ដើម្បីប៉ាន់ស្មាន',goalDays:'ថ្ងៃ',goalEntryAmount:'ចំនួនប្រាក់បន្ថែម/ដក',addSavings:'＋ បន្ថែមប្រាក់',withdrawSavings:'− ដកប្រាក់',goalHistory:'ប្រវត្តិសន្សំ',goalNoHistory:'មិនទាន់មានប្រវត្តិសន្សំទេ។',goalAddDone:'បានបន្ថែមប្រាក់សន្សំ។',goalWithdrawDone:'បានដកប្រាក់សន្សំ។',goalAdd:'បន្ថែម',goalWithdraw:'ដកប្រាក់',goalOpening:'ប្រាក់សន្សំដំបូង',goalAdjustUp:'កែបង្កើនសមតុល្យ',goalAdjustDown:'កែកាត់បន្ថយសមតុល្យ',confirmGoalDelete:'លុបគោលដៅសន្សំនេះ? ប្រវត្តិចំណាយនៅតែរក្សាទុក។'});
+Object.assign(en,{goals:'Savings',newGoal:'+ New goal',goalsHelp:'Add or withdraw savings and review the history. Savings do not create or change expenses.',goalName:'Goal name',goalTarget:'Target amount',goalSaved:'Total saved',editGoal:'Edit goal',quickAddSavings:'Manage savings',deleteGoal:'Delete goal',emptyGoals:'Your next goal starts here. Add a laptop, tuition or travel fund.',appearance:'Appearance',system:'Use device setting',light:'Light',dark:'Dark',fullscreen:'Fullscreen',retry:'Try again',greetingTag:'Small entries. A clearer picture.',welcome:'Hello',saving:'Saving…',fullscreenUnavailable:'Fullscreen is unavailable in this Telegram client.',goalComplete:'Goal reached!',goalRemaining:'Left to save',goalEstimate:'Estimated time',goalNoEstimate:'Add savings for an estimate',goalDays:'days',goalEntryAmount:'Amount to add/withdraw',addSavings:'＋ Add money',withdrawSavings:'− Withdraw',goalHistory:'Savings history',goalNoHistory:'No savings activity yet.',goalAddDone:'Savings added.',goalWithdrawDone:'Savings withdrawn.',goalAdd:'Added',goalWithdraw:'Withdrawn',goalOpening:'Starting balance',goalAdjustUp:'Manual increase',goalAdjustDown:'Manual decrease',confirmGoalDelete:'Delete this savings goal? Your expense history will be kept.'});
+Object.assign(km,{goals:'សន្សំ',newGoal:'＋ គោលដៅថ្មី',goalsHelp:'បន្ថែម ឬដកប្រាក់សន្សំ ហើយមើលប្រវត្តិបាន។ វាមិនបង្កើត ឬប្ដូរកំណត់ត្រាចំណាយទេ។',goalName:'ឈ្មោះគោលដៅ',goalTarget:'គោលដៅប្រាក់',goalSaved:'សន្សំបានសរុប',editGoal:'កែគោលដៅ',quickAddSavings:'គ្រប់គ្រងប្រាក់សន្សំ',deleteGoal:'លុបគោលដៅ',emptyGoals:'ចាប់ផ្ដើមគោលដៅថ្មី៖ Laptop ថ្លៃសាលា ឬដំណើរកម្សាន្ត។',appearance:'រូបរាង',system:'តាមឧបករណ៍',light:'ភ្លឺ',dark:'ងងឹត',fullscreen:'ពេញអេក្រង់',retry:'ព្យាយាមម្ដងទៀត',greetingTag:'កត់ត្រាបន្តិច រៀបចំបានច្បាស់',welcome:'សួស្ដី',saving:'កំពុងរក្សាទុក…',fullscreenUnavailable:'Telegram នេះមិនអាចបើកពេញអេក្រង់បានទេ។',goalComplete:'សម្រេចគោលដៅហើយ!',goalRemaining:'នៅខ្វះ',goalEstimate:'ប៉ាន់ស្មានរយៈពេល',goalNoEstimate:'បន្ថែមប្រាក់សន្សំ ដើម្បីប៉ាន់ស្មាន',goalDays:'ថ្ងៃ',goalEntryAmount:'ចំនួនប្រាក់បន្ថែម/ដក',addSavings:'＋ បន្ថែមប្រាក់',withdrawSavings:'− ដកប្រាក់',goalHistory:'ប្រវត្តិសន្សំ',goalNoHistory:'មិនទាន់មានប្រវត្តិសន្សំទេ។',goalAddDone:'បានបន្ថែមប្រាក់សន្សំ។',goalWithdrawDone:'បានដកប្រាក់សន្សំ។',goalAdd:'បន្ថែម',goalWithdraw:'ដកប្រាក់',goalOpening:'ប្រាក់សន្សំដំបូង',goalAdjustUp:'កែបង្កើនសមតុល្យ',goalAdjustDown:'កែកាត់បន្ថយសមតុល្យ',confirmGoalDelete:'លុបគោលដៅសន្សំនេះ? ប្រវត្តិចំណាយនៅតែរក្សាទុក។'});
 let goalsState=[],currentGoal=null,goalRequestId='',goalsVersion=0,toastTimer;
 let appTheme='system';
 try{appTheme=localStorage.getItem('mymoney-theme')||'system';}catch{}
@@ -176,13 +176,13 @@ function renderGoals(){
   if(!goalsState.length){root.append(node('div',t('emptyGoals'),'empty'));return;}
   for(const goal of goalsState){
     const card=node('article',undefined,'card goal-card');
-    const top=node('div',undefined,'section-title');const title=node('button','🎯 '+goal.title,'goal-title-button');title.type='button';title.onclick=()=>openGoal(goal);top.append(title,node('span',goal.percent+'%','goal-percent'));
+    const top=node('div',undefined,'section-title');const title=node('button','🎯 '+goal.title,'goal-title-button');title.type='button';title.onclick=()=>openGoal(goal);const edit=node('button',t('editGoal'),'goal-edit-button');edit.type='button';edit.onclick=()=>openGoal(goal);top.append(title,edit,node('span',goal.percent+'%','goal-percent'));
     const progress=node('progress');progress.max=goal.target;progress.value=Math.min(goal.saved,goal.target);progress.setAttribute('aria-label',goal.title);
     card.append(top,node('strong',money(goal.saved,goal.currency)),node('p','/ '+money(goal.target,goal.currency),'muted'),progress,
       node('p',t('goalRemaining')+': '+money(goal.remaining,goal.currency),'goal-remaining'));
     if(goal.estimated_days){const estimateDate=new Date();estimateDate.setDate(estimateDate.getDate()+goal.estimated_days);card.append(node('small',t('goalEstimate')+': '+goal.estimated_days+' '+t('goalDays')+' · '+estimateDate.toLocaleDateString(),'muted'));}
     if(goal.saved>=goal.target)card.append(node('p',t('goalComplete'),'positive'));
-    root.append(card);
+    const actions=node('div',undefined,'goal-card-actions');const add=node('button',t('quickAddSavings'),'secondary');add.type='button';add.onclick=()=>openGoal(goal,true);actions.append(add);card.append(actions);root.append(card);
   }
 }
 async function loadGoals(){
@@ -207,16 +207,16 @@ async function loadGoalEntries(goal){
       const when=node('small',new Date(entry.created_at*1000).toLocaleString());line.append(label,amount,when);root.append(line);}
   }catch(error){root.append(node('p',error.message,'muted'));}
 }
-function openGoal(goal=null){
+function openGoal(goal=null,focusSavings=false){
   if(!state.user){notify(tg?.initData?'Please refresh and request access first.':t('openTelegram'));return;}
-  currentGoal=goal;goalRequestId=crypto.randomUUID();$('goalForm').reset();$('goalError').textContent='';
+  currentGoal=goal;goalRequestId=crypto.randomUUID();$('goalForm').reset();$('goalForm').classList.toggle('quick-saving-mode',!!(goal&&focusSavings));$('goalError').textContent='';
   $('goalName').value=goal?.title||'';$('goalCurrency').value=goal?.currency||$('currency').value;$('goalCurrency').disabled=!!goal;goalPrecision();
   const scale=$('goalCurrency').value==='USD'?100:1;
   $('goalEntryAmount').step=$('goalCurrency').value==='USD'?'0.01':'1';$('goalEntryAmount').min=$('goalEntryAmount').step;
   $('goalTarget').value=goal?goal.target/scale:'';$('goalSaved').value=goal?goal.saved/scale:0;$('deleteGoal').hidden=!goal;
   $('goalTracking').hidden=!goal;$('goalEntryAmount').value='';$('goalEntryStatus').textContent='';
   if(goal){updateGoalTracking(goal);loadGoalEntries(goal);}
-  $('goalDialog').showModal();
+  $('goalDialog').showModal();if(goal&&focusSavings)setTimeout(()=>$('goalEntryAmount').focus(),80);
 }
 $('newGoal').onclick=()=>openGoal();$('closeGoal').onclick=()=>$('goalDialog').close();$('goalCurrency').onchange=goalPrecision;$('refreshGoals').onclick=loadGoals;
 $('addGoalMoney').onclick=()=>submitGoalMoney('add');$('withdrawGoalMoney').onclick=()=>submitGoalMoney('withdraw');
