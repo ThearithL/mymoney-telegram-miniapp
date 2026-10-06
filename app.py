@@ -150,6 +150,7 @@ def create_app(config=None):
                       ALLOWED_USER_IDS=os.getenv('ALLOWED_USER_IDS', ''),
                       ADMIN_USER_ID=os.getenv('ADMIN_USER_ID', ''),
                       ADMIN_PASSWORD_HASH=os.getenv('ADMIN_PASSWORD_HASH', ''),
+                      ADMIN_PASSWORD=os.getenv('ADMIN_PASSWORD', ''),
                       FLASK_SECRET_KEY=os.getenv('FLASK_SECRET_KEY', ''),
                       DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=3*1024*1024)
     if config:
@@ -566,7 +567,7 @@ def create_app(config=None):
         unlocked = session.get('admin_user_id') == g.user['id'] and int(
             session.get('admin_unlock_expires', 0)) > int(time.time())
         expires_in = max(0, int(session.get('admin_unlock_expires', 0)) - int(time.time())) if unlocked else 0
-        return {'password_configured': bool(app.config['ADMIN_PASSWORD_HASH']), 'unlocked': unlocked,
+        return {'password_configured': bool(app.config['ADMIN_PASSWORD_HASH'] or app.config['ADMIN_PASSWORD']), 'unlocked': unlocked,
                 'expires_in': expires_in}
 
     @app.post('/api/admin/unlock')
@@ -576,8 +577,9 @@ def create_app(config=None):
         if not is_admin_user(uid):
             abort(403, 'Admin only.')
         password_hash = app.config['ADMIN_PASSWORD_HASH']
-        if not password_hash:
-            abort(503, 'Set ADMIN_PASSWORD_HASH in Render Environment before using Admin mode.')
+        plain_password = app.config['ADMIN_PASSWORD']
+        if not password_hash and not plain_password:
+            abort(503, 'Set ADMIN_PASSWORD or ADMIN_PASSWORD_HASH in Render Environment before using Admin mode.')
         password = json_body().get('password')
         if not isinstance(password, str) or not 1 <= len(password) <= 256:
             abort(400, 'Enter your Admin password.')
@@ -597,10 +599,13 @@ def create_app(config=None):
                 window_start = attempt['window_started_at']; failures = attempt['failures']
                 if now - window_start >= 900:
                     window_start, failures = now, 0
-                try:
-                    valid = check_password_hash(password_hash, password)
-                except (ValueError, TypeError):
-                    valid = False
+                if password_hash:
+                    try:
+                        valid = check_password_hash(password_hash, password)
+                    except (ValueError, TypeError):
+                        valid = False
+                else:
+                    valid = hmac.compare_digest(plain_password.encode('utf-8'), password.encode('utf-8'))
                 if valid:
                     conn.execute(update(admin_login_attempts).where(
                         admin_login_attempts.c.user_id == uid).values(failures=0,

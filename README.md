@@ -65,7 +65,9 @@ BOT_TOKEN=your_botfather_token
 APP_URL=https://your-service.onrender.com
 WEBHOOK_SECRET=your_generated_random_secret
 ADMIN_USER_ID=your_numeric_personal_telegram_id
-ADMIN_PASSWORD_HASH=your_werkzeug_password_hash
+# Choose ONE: set a direct password, or use the optional hash below.
+ADMIN_PASSWORD=choose_your_own_long_password
+# ADMIN_PASSWORD_HASH=your_werkzeug_password_hash
 FLASK_SECRET_KEY=your_random_64_character_secret
 ALLOWED_USER_IDS=
 DATABASE_URL=postgresql://user:password@host/database
@@ -73,13 +75,13 @@ DATABASE_URL=postgresql://user:password@host/database
 
 Optional extra pre-approved IDs in ALLOWED_USER_IDS are comma-separated. If both ADMIN_USER_ID and ALLOWED_USER_IDS are empty, Mini App access is disabled until owner bootstrap. Approved users are stored in access_requests, not environment variables. Never commit `.env` or password hashes/secrets.
 
-Generate the Admin password hash after installing requirements, then set it only in Render Environment (do not store the plain password as an environment variable):
+To choose a password directly, set `ADMIN_PASSWORD` in Render → Environment to the password you want, then save and redeploy. Keep the Render service private to your trusted users and use a long, unique password. The app compares direct passwords safely and never displays them. For stronger secret handling, you can instead leave `ADMIN_PASSWORD` empty and set `ADMIN_PASSWORD_HASH` to a Werkzeug password hash:
 
 ```powershell
 .venv\Scripts\python -c "from getpass import getpass; from werkzeug.security import generate_password_hash; print(generate_password_hash(getpass('New Admin password: ')))"
 ```
 
-Copy the printed hash into Render `ADMIN_PASSWORD_HASH`. Use a long unique password. Set `FLASK_SECRET_KEY` to a separate random secret and keep it unchanged; it signs secure Admin sessions and keyed deletion markers. The password is required again after 15 minutes or when you press Lock. Five failed attempts lock Admin login for 15 minutes. Admin APIs require both valid Telegram Mini App authentication and the password unlock.
+Set `FLASK_SECRET_KEY` to a separate random secret and keep it unchanged; it signs secure Admin sessions and keyed deletion markers. The password is required again after 15 minutes or when you press Lock. Five failed attempts lock Admin login for 15 minutes. Admin APIs require both valid Telegram Mini App authentication and the password unlock.
 
 ## 2. Deploy to Render with PostgreSQL
 

@@ -63,7 +63,7 @@ async function loadAdminConsole(){
   try{
     security=await api('/api/admin/security');
     if(!security.password_configured){$('adminUnlockCard').hidden=false;$('adminPassword').disabled=true;$('adminUnlockButton').disabled=true;
-      $('adminPasswordHelp').textContent='Set ADMIN_PASSWORD_HASH in Render Environment to enable Admin password protection. / កំណត់ ADMIN_PASSWORD_HASH ក្នុង Render ជាមុន។';return;}
+      $('adminPasswordHelp').textContent='Set ADMIN_PASSWORD in Render Environment to choose your password directly (or use ADMIN_PASSWORD_HASH). / កំណត់ ADMIN_PASSWORD ក្នុង Render ដើម្បីប្រើពាក្យសម្ងាត់ដែលអ្នកជ្រើស។';return;}
     $('adminPassword').disabled=false;$('adminUnlockButton').disabled=false;
     if(!security.unlocked){displayAdminLocked();$('adminPasswordHelp').textContent='Enter the Admin password. It locks automatically after 15 minutes. / បញ្ចូលពាក្យសម្ងាត់ Admin។ វាចាក់សោស្វ័យប្រវត្តិក្រោយ ១៥ នាទី។';return;}
   }catch(error){$('adminUnlockCard').hidden=false;$('adminUnlockStatus').textContent=error.message;return;}

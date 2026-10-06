@@ -356,6 +356,16 @@ def test_static_and_bad_input(client):
     assert client.get('/api/data?month=oops',headers=headers()).status_code==400
     assert client.post('/api/transactions',json=[],headers=headers()).status_code==400
 
+def test_admin_can_use_direct_render_password(tmp_path):
+    chosen_password = 'Thearith-Admin-Test-2026!'
+    client = create_app({'TESTING': True, 'BOT_TOKEN': TOKEN, 'ADMIN_USER_ID': '123',
+        'ADMIN_PASSWORD': chosen_password,
+        'DATABASE_URL': 'sqlite:///'+str(tmp_path/'direct-admin-password.db')}).test_client()
+    security = client.get('/api/admin/security', headers=headers())
+    assert security.status_code == 200 and security.json['password_configured'] is True
+    assert client.post('/api/admin/unlock', headers=headers(), json={'password':'wrong'}).status_code == 401
+    assert client.post('/api/admin/unlock', headers=headers(), json={'password':chosen_password}).status_code == 200
+
 @pytest.fixture
 def access_client(tmp_path, monkeypatch):
     calls = []
