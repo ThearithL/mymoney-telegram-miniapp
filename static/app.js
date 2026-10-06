@@ -6,7 +6,7 @@ const km = {month:'ខែ',net:'ចំណូល − ចំណាយក្នុ�
 Object.assign(en, {
   quickSummary:'Current summary', today:'Today', thisWeek:'This week', thisMonth:'This month', refresh:'Refresh',
   netShort:'Net', dailyTrend:'Daily spending', trendHelp:'For the selected month above. Tap a bar to see its amount.',
-  dailyAllowance:'How much can I spend today?', dailyAllowanceHelp:'Average daily amount from your remaining monthly budget, counting today.',
+  dailyAllowance:'Daily spending guide', dailyAllowanceHelp:'Average daily amount from your remaining monthly budget, counting today.', spendTodayMax:'daily guide',
   dailyAllowanceNoBudget:'Set a monthly budget to calculate your daily amount.', dailyAllowanceReached:'Your monthly budget is used up. Daily amount: 0.',
   daysIncludingToday:'days left, including today', monthlyLeft:'Monthly budget left',
   dailyAverage:'Average / day', highestDay:'Highest spending day', viewDailyData:'View daily data table',
@@ -16,7 +16,7 @@ Object.assign(en, {
 Object.assign(km, {
   quickSummary:'សង្ខេបបច្ចុប្បន្ន', today:'ថ្ងៃនេះ', thisWeek:'សប្ដាហ៍នេះ', thisMonth:'ខែនេះ', refresh:'ធ្វើបច្ចុប្បន្នភាព',
   netShort:'នៅសល់សុទ្ធ', dailyTrend:'ចំណាយប្រចាំថ្ងៃ', trendHelp:'សម្រាប់ខែដែលបានជ្រើសខាងលើ។ ចុចលើជួរដើម្បីមើលចំនួនប្រាក់។',
-  dailyAllowance:'ថ្ងៃនេះអាចចាយបានប៉ុន្មាន?', dailyAllowanceHelp:'ប្រាក់ថវិកានៅសល់ចែកតាមថ្ងៃដែលនៅសល់ ដោយរាប់បញ្ចូលថ្ងៃនេះ។',
+  dailyAllowance:'ចំនួនណែនាំសម្រាប់ចាយប្រចាំថ្ងៃ', dailyAllowanceHelp:'ថវិកានៅសល់ចែកតាមថ្ងៃដែលនៅសល់ ដោយរាប់បញ្ចូលថ្ងៃនេះ។', spendTodayMax:'ជាចំនួនណែនាំប្រចាំថ្ងៃ',
   dailyAllowanceNoBudget:'កំណត់ថវិកាប្រចាំខែជាមុន ដើម្បីគណនាចំនួនចាយប្រចាំថ្ងៃ។', dailyAllowanceReached:'បានប្រើថវិកាអស់ហើយ។ ថ្ងៃនេះអាចចាយបាន៖ 0។',
   daysIncludingToday:'ថ្ងៃនៅសល់ រាប់ទាំងថ្ងៃនេះ', monthlyLeft:'ថវិកានៅសល់ក្នុងខែ',
   dailyAverage:'មធ្យម/ថ្ងៃ', highestDay:'ថ្ងៃចាយច្រើនបំផុត', viewDailyData:'មើលតារាងប្រចាំថ្ងៃ',
@@ -29,6 +29,12 @@ Object.assign(en,{goalActiveSection:'In progress',goalCompletedSection:'Complete
 Object.assign(km,{goalActiveSection:'កំពុងសន្សំ',goalCompletedSection:'សម្រេចហើយ',goalHiddenSection:'គោលដៅដែលបានលាក់',goalActiveCount:'គោលដៅកំពុងសន្សំ',goalCompletedCount:'បានសម្រេច',goalSavedTotal:'ប្រាក់សន្សំសរុប',goalQuickAmounts:'ចំនួនរហ័ស',emptyActiveGoals:'មិនមានគោលដៅកំពុងសន្សំទេ។ បង្កើតគោលដៅថ្មីសម្រាប់ផែនការបន្ទាប់។',emptyCompletedGoals:'គោលដៅដែលសម្រេចនឹងបង្ហាញនៅទីនេះ។',noHiddenGoals:'មិនមានគោលដៅលាក់ទេ។',showHiddenGoals:'បង្ហាញគោលដៅដែលលាក់',hideHiddenGoals:'លាក់គោលដៅដែលបានបង្ហាញ'});
 Object.assign(en,{confirmDeleteGoalTitle:'Delete this goal?',confirmDeleteGoalHelp:'This permanently deletes the goal and all of its savings history. This cannot be undone.',confirmDeleteGoal:'Delete permanently',cancel:'Cancel'});
 Object.assign(km,{confirmDeleteGoalTitle:'លុបគោលដៅនេះ?',confirmDeleteGoalHelp:'ការលុបនឹងលុបគោលដៅ និងប្រវត្តិសន្សំទាំងអស់ជាអចិន្ត្រៃយ៍។ មិនអាចស្ដារវិញបានទេ។',confirmDeleteGoal:'លុបជាអចិន្ត្រៃយ៍',cancel:'បោះបង់'});
+Object.assign(en,{monthSpentAverage:'Average spent per day',usedPercent:'used',budgetThresholdAlert:'Budget alert starts at 80%'});
+Object.assign(km,{monthSpentAverage:'ចំណាយមធ្យមក្នុងមួយថ្ងៃ',usedPercent:'បានប្រើ',budgetThresholdAlert:'ជូនដំណឹងចាប់ពីប្រើថវិកា 80%'});
+
+Object.assign(en,{moreTools:'More personal tools',enterFullscreen:'⛶ Enter fullscreen',exitFullscreen:'⛶ Exit fullscreen',fullscreenHelp:'Choose fullscreen or normal view. Availability depends on your Telegram client.',fullscreenUnsupported:'Fullscreen is not supported by this Telegram client.',fullscreenFailed:'Telegram could not change the fullscreen mode.'});
+Object.assign(km,{moreTools:'ឧបករណ៍ផ្ទាល់ខ្លួនបន្ថែម',enterFullscreen:'⛶ បើកពេញអេក្រង់',exitFullscreen:'⛶ ចេញពីពេញអេក្រង់',fullscreenHelp:'ជ្រើសបើក ឬចេញពីពេញអេក្រង់។ អាស្រ័យលើការគាំទ្ររបស់ Telegram។',fullscreenUnsupported:'Telegram នេះមិនគាំទ្រមុខងារពេញអេក្រង់ទេ។',fullscreenFailed:'Telegram មិនអាចប្ដូរទំហំអេក្រង់បានទេ។'});
+
 let goalsState=[],currentGoal=null,goalRequestId='',goalsVersion=0,toastTimer,showHiddenGoals=false;
 let appTheme='system';
 try{appTheme=localStorage.getItem('mymoney-theme')||'system';}catch{}
@@ -83,11 +89,55 @@ function renderDailyAllowance(currency, expense, budget){
   const remaining=Math.max(0,budget.amount-expense);
   $('dailyAllowanceAmount').textContent=money(Math.floor(remaining/daysLeft),currency);
   $('dailyAllowanceHint').textContent=remaining>0
-    ?`${t('monthlyLeft')}: ${money(remaining,currency)} ÷ ${daysLeft} ${t('daysIncludingToday')}`
+    ?`${t('monthlyLeft')}: ${money(remaining,currency)} ÷ ${daysLeft} ${t('daysIncludingToday')} · ${t('spendTodayMax')}`
     :t('dailyAllowanceReached');
 }
 function renderSpendingTypes(currency,items){const root=$('monthlySpendingTypes');if(!root)return;root.replaceChildren();const expenses=items.filter(r=>r.kind==='expense');if(!expenses.length){root.append(node('p',t('noExpenseThisMonth'),'muted'));return;}const totals={essential:0,want:0,none:0};for(const row of expenses){const amount=typeof convertUnits==='function'?convertUnits(row.amount,row.currency,currency):row.amount;const type=['essential','want','none'].includes(row.spending_type)?row.spending_type:'essential';totals[type]+=amount;}const all=totals.essential+totals.want+totals.none;for(const type of ['essential','want','none']){const block=node('div',undefined,'spending-type-row'),heading=node('div',undefined,'bar-label');heading.append(node('span',t(type)),node('b',money(totals[type],currency)));const progress=node('progress');progress.max=all;progress.value=totals[type];progress.setAttribute('aria-label',t(type));block.append(heading,progress);root.append(block);}}
-function render(){const currency=$('currency').value;const items=state.transactions.filter(r=>r.currency===currency);renderSpendingTypes(currency,items);$('budgetContext').textContent=t('budgetContext')+' '+$('month').value+' · '+$('budgetCurrency').value;const expense=items.filter(r=>r.kind==='expense').reduce((n,r)=>n+r.amount,0);const income=items.filter(r=>r.kind==='income').reduce((n,r)=>n+r.amount,0);$('net').textContent=money(income-expense);$('income').textContent=money(income);$('expense').textContent=money(expense);const budget=state.budgets.find(b=>b.currency===currency);renderDailyAllowance(currency,expense,budget);const formBudget=state.budgets.find(b=>b.currency===$('budgetCurrency').value);$('budgetAmount').value=formBudget?formBudget.amount/($('budgetCurrency').value==='USD'?100:1):'';$('budgetAmount').step=$('budgetCurrency').value==='USD'?'0.01':'1';$('budgetAmount').min='0';$('budgetSummary').textContent=budget?money(expense)+' / '+money(budget.amount):t('noBudget');$('budgetProgress').value=budget&&budget.amount>0?Math.min(100,expense/budget.amount*100):0;$('budgetHint').classList.toggle('budget-warning',!!budget&&budget.amount>0&&expense>=budget.amount*.8);$('budgetHint').setAttribute('role','status');$('budgetHint').textContent=budget?(budget.amount===0?t('budgetZero'):(expense>budget.amount?t('over')+': '+money(expense-budget.amount):t('remaining')+': '+money(budget.amount-expense))+(expense>=budget.amount*.8?' · '+t('warning'):'')):'';const chart=$('chart');chart.replaceChildren();const grouped={};items.filter(r=>r.kind==='expense').forEach(r=>grouped[r.category]=(grouped[r.category]||0)+r.amount);if(!expense)chart.append(node('p',t('empty'),'muted'));Object.entries(grouped).sort((a,b)=>b[1]-a[1]).forEach(([category,amount])=>{const label=node('div',undefined,'bar-label');label.append(node('span',t(category)),node('b',money(amount)));const bar=node('progress');bar.max=expense;bar.value=amount;bar.setAttribute('aria-label',t(category));chart.append(label,bar);});rows('recent',items.slice(0,4));renderHistory();renderTrend(items);renderSummary();syncAdminModeUI();$('greetingName').textContent=state.user?t('welcome')+', '+state.user.name:'MyMoney';}
+function render(){
+  const currency=$('currency').value;
+  const selectedMonth=$('month').value;
+  const items=(state.transactions||[]).filter(row=>row.currency===currency&&row.day?.slice(0,7)===selectedMonth);
+  renderSpendingTypes(currency,items);
+  $('budgetContext').textContent=t('budgetContext')+' '+$('month').value+' · '+$('budgetCurrency').value;
+  const expense=items.filter(row=>row.kind==='expense').reduce((sum,row)=>sum+row.amount,0);
+  const income=items.filter(row=>row.kind==='income').reduce((sum,row)=>sum+row.amount,0);
+  $('net').textContent=money(income-expense);$('income').textContent=money(income);$('expense').textContent=money(expense);
+
+  const budget=(state.budgets||[]).find(row=>row.currency===currency);
+  renderDailyAllowance(currency,expense,budget);
+  const formBudget=(state.budgets||[]).find(row=>row.currency===$('budgetCurrency').value);
+  $('budgetAmount').value=formBudget?formBudget.amount/($('budgetCurrency').value==='USD'?100:1):'';
+  $('budgetAmount').step=$('budgetCurrency').value==='USD'?'0.01':'1';$('budgetAmount').min='0';
+  $('budgetProgress').hidden=!budget||budget.amount===0;$('budgetHint').hidden=!budget;
+  $('budgetSummary').textContent=budget?money(expense,currency)+' / '+money(budget.amount,currency):t('noBudget');
+  const usedPercent=budget&&budget.amount>0?expense*100/budget.amount:null;
+  $('budgetProgress').value=usedPercent===null?0:Math.min(100,usedPercent);
+  const remaining=budget?budget.amount-expense:0;
+  $('budgetHint').classList.toggle('budget-warning',usedPercent!==null&&usedPercent>=80);
+  $('budgetHint').classList.toggle('budget-over',!!budget&&remaining<0);
+  if(budget&&budget.amount===0){
+    $('budgetHint').textContent=(remaining<0?t('over')+': '+money(-remaining,currency)+' · ':'')+t('budgetZero');
+  }else if(budget){
+    const exact=remaining>=0?t('remaining')+': '+money(remaining,currency):t('over')+': '+money(-remaining,currency);
+    $('budgetHint').textContent=exact+' · '+usedPercent.toFixed(1)+'% '+t('usedPercent')+(usedPercent>=80?' · '+t('budgetThresholdAlert'):'');
+  }else $('budgetHint').textContent='';
+
+  const [year,month]=($('month').value||'').split('-').map(Number);
+  const monthDays=year&&month?new Date(Date.UTC(year,month,0)).getUTCDate():0;
+  const todayValue=state.today||today();
+  const elapsedDays=selectedMonth<todayValue.slice(0,7)?monthDays:selectedMonth===todayValue.slice(0,7)?Number(todayValue.slice(8)):0;
+  $('monthSpentAverage').textContent=elapsedDays?money(Math.round(expense/elapsedDays),currency):'—';
+
+  const chart=$('chart');chart.replaceChildren();const grouped={};
+  items.filter(row=>row.kind==='expense').forEach(row=>grouped[row.category]=(grouped[row.category]||0)+row.amount);
+  if(!expense)chart.append(node('p',t('empty'),'muted'));
+  Object.entries(grouped).sort((a,b)=>b[1]-a[1]).forEach(([category,amount])=>{
+    const label=node('div',undefined,'bar-label');label.append(node('span',t(category)),node('b',money(amount,currency)));
+    const bar=node('progress');bar.max=expense||1;bar.value=amount;bar.setAttribute('aria-label',t(category));chart.append(label,bar);
+  });
+  rows('recent',items.slice(0,4));renderHistory();renderTrend(items);renderSummary();syncAdminModeUI();
+  $('greetingName').textContent=state.user?t('welcome')+', '+state.user.name:'MyMoney';
+}
 function svgNode(tag, attributes={}) {
   const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
   Object.entries(attributes).forEach(([key,value]) => element.setAttribute(key,String(value)));
@@ -272,7 +322,11 @@ $('deleteGoal').onclick=async()=>{
 };
 $('theme').onchange=()=>{appTheme=$('theme').value;try{localStorage.setItem('mymoney-theme',appTheme);}catch{}applyTheme();};
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);applyTheme();
-$('fullscreen').onclick=()=>{if(tg?.initData&&tg.isVersionAtLeast('8.0')){try{tg.requestFullscreen();}catch{notify(t('fullscreenUnavailable'));}}else notify(t('fullscreenUnavailable'));};
+function supportsTelegramFullscreen(){try{return !!(tg?.initData&&tg.isVersionAtLeast('8.0')&&typeof tg.requestFullscreen==='function'&&typeof tg.exitFullscreen==='function');}catch{return false;}}
+function syncFullscreenControl(statusKey=null){const active=!!tg?.isFullscreen;$('fullscreen').textContent=t(active?'exitFullscreen':'enterFullscreen');$('fullscreen').setAttribute('aria-pressed',String(active));$('fullscreenStatus').textContent=t(statusKey||(supportsTelegramFullscreen()?'fullscreenHelp':'fullscreenUnsupported'));}
+$('fullscreen').onclick=()=>{if(!supportsTelegramFullscreen()){$('fullscreenStatus').textContent=t('fullscreenUnsupported');return;}try{if(tg.isFullscreen)tg.exitFullscreen();else tg.requestFullscreen();}catch{$('fullscreenStatus').textContent=t('fullscreenFailed');}};
+if(tg?.onEvent){tg.onEvent('fullscreenChanged',syncFullscreenControl);tg.onEvent('fullscreenFailed',()=>syncFullscreenControl('fullscreenFailed'));}
+syncFullscreenControl();
 $('retryLoad').onclick=()=>load();
 document.querySelectorAll('[data-quick]').forEach(button=>button.onclick=()=>{
   const category=button.dataset.quick;openEntry('expense');if(!$('entryDialog').open)return;
@@ -285,8 +339,8 @@ document.querySelectorAll('[data-period]').forEach(button=>button.onclick=()=>{
 });
 $('refreshSummary').onclick=()=>loadSummary();
 $('month').value=today().slice(0,7);translate();
-// Open the Mini App in fullscreen when the Telegram client supports it.
-// Unsupported clients keep the normal expanded view and can still use the app.
+// Expand the Mini App to Telegram's normal available view. Fullscreen is
+// controlled only by the Settings toggle so users can choose either mode.
 if (tg?.initData) {
   tg.ready();
   tg.expand();
@@ -311,11 +365,6 @@ if (tg?.initData) {
     tg.onEvent('fullscreenChanged', syncSafeArea);
     syncSafeArea();
 
-    try {
-      if (!tg.isFullscreen) tg.requestFullscreen();
-    } catch (error) {
-      console.warn('Fullscreen unavailable:', error);
-    }
   }
 
   tg.BackButton.onClick(() => {
