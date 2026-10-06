@@ -32,8 +32,8 @@ Object.assign(km,{confirmDeleteGoalTitle:'លុបគោលដៅនេះ?',co
 Object.assign(en,{monthSpentAverage:'Average spent per day',usedPercent:'used',budgetThresholdAlert:'Budget alert starts at 80%'});
 Object.assign(km,{monthSpentAverage:'ចំណាយមធ្យមក្នុងមួយថ្ងៃ',usedPercent:'បានប្រើ',budgetThresholdAlert:'ជូនដំណឹងចាប់ពីប្រើថវិកា 80%'});
 
-Object.assign(en,{moreTools:'More personal tools',enterFullscreen:'⛶ Enter fullscreen',exitFullscreen:'⛶ Exit fullscreen',fullscreenHelp:'Choose fullscreen or normal view. Availability depends on your Telegram client.',fullscreenUnsupported:'Fullscreen is not supported by this Telegram client.',fullscreenFailed:'Telegram could not change the fullscreen mode.'});
-Object.assign(km,{moreTools:'ឧបករណ៍ផ្ទាល់ខ្លួនបន្ថែម',enterFullscreen:'⛶ បើកពេញអេក្រង់',exitFullscreen:'⛶ ចេញពីពេញអេក្រង់',fullscreenHelp:'ជ្រើសបើក ឬចេញពីពេញអេក្រង់។ អាស្រ័យលើការគាំទ្ររបស់ Telegram។',fullscreenUnsupported:'Telegram នេះមិនគាំទ្រមុខងារពេញអេក្រង់ទេ។',fullscreenFailed:'Telegram មិនអាចប្ដូរទំហំអេក្រង់បានទេ។'});
+Object.assign(en,{moreTools:'More personal tools',screenMode:'Mini App display size',screenModeDevice:'Follow Telegram/device',screenModeFull:'Fullscreen',screenModeNormal:'Normal (not fullscreen)',fullscreenHelp:'Choose how the Mini App fits your screen. Your choice is saved on this device.',fullscreenUnsupported:'Fullscreen is not supported by this Telegram client; choose device or normal mode.',fullscreenFailed:'Telegram could not change the fullscreen mode.'});
+Object.assign(km,{moreTools:'ឧបករណ៍ផ្ទាល់ខ្លួនបន្ថែម',screenMode:'ទំហំបង្ហាញ Mini App',screenModeDevice:'តាម Telegram/ឧបករណ៍',screenModeFull:'ពេញអេក្រង់',screenModeNormal:'ទំហំធម្មតា (មិនពេញអេក្រង់)',fullscreenHelp:'ជ្រើសរបៀបបង្ហាញ App។ ជម្រើសនេះត្រូវបានរក្សាទុកក្នុងឧបករណ៍នេះ។',fullscreenUnsupported:'Telegram នេះមិនគាំទ្រពេញអេក្រង់ទេ។ សូមជ្រើសតាមឧបករណ៍ ឬទំហំធម្មតា។',fullscreenFailed:'Telegram មិនអាចប្ដូរទំហំអេក្រង់បានទេ។'});
 
 let goalsState=[],currentGoal=null,goalRequestId='',goalsVersion=0,toastTimer,showHiddenGoals=false;
 let appTheme='system';
@@ -43,6 +43,8 @@ function applyTheme(){
   document.documentElement.dataset.theme=dark?'dark':'light';
   $('theme').value=appTheme;
 }
+let screenMode='device';
+try{screenMode=localStorage.getItem('mymoney-screen-mode')||'device';}catch{}
 function toast(message){clearTimeout(toastTimer);$('toast').textContent='✓ '+message;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
 function bootDone(){$('bootLoader').hidden=true;}
 function busy(button,on){button.classList.toggle('busy',on);button.disabled=on;button.setAttribute('aria-busy',String(on));}
@@ -323,9 +325,22 @@ $('deleteGoal').onclick=async()=>{
 $('theme').onchange=()=>{appTheme=$('theme').value;try{localStorage.setItem('mymoney-theme',appTheme);}catch{}applyTheme();};
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);applyTheme();
 function supportsTelegramFullscreen(){try{return !!(tg?.initData&&tg.isVersionAtLeast('8.0')&&typeof tg.requestFullscreen==='function'&&typeof tg.exitFullscreen==='function');}catch{return false;}}
-function syncFullscreenControl(statusKey=null){const active=!!tg?.isFullscreen;$('fullscreen').textContent=t(active?'exitFullscreen':'enterFullscreen');$('fullscreen').setAttribute('aria-pressed',String(active));$('fullscreenStatus').textContent=t(statusKey||(supportsTelegramFullscreen()?'fullscreenHelp':'fullscreenUnsupported'));}
-$('fullscreen').onclick=()=>{if(!supportsTelegramFullscreen()){$('fullscreenStatus').textContent=t('fullscreenUnsupported');return;}try{if(tg.isFullscreen)tg.exitFullscreen();else tg.requestFullscreen();}catch{$('fullscreenStatus').textContent=t('fullscreenFailed');}};
-if(tg?.onEvent){tg.onEvent('fullscreenChanged',syncFullscreenControl);tg.onEvent('fullscreenFailed',()=>syncFullscreenControl('fullscreenFailed'));}
+function syncFullscreenControl(statusKey=null){$('screenMode').value=screenMode;$('fullscreenStatus').textContent=t(statusKey||(screenMode==='fullscreen'&&!supportsTelegramFullscreen()?'fullscreenUnsupported':'fullscreenHelp'));}
+function applyScreenMode(showError=true){
+  if(!tg?.initData){syncFullscreenControl();return;}
+  try{
+    if(screenMode==='fullscreen'){
+      if(!supportsTelegramFullscreen()){syncFullscreenControl(showError?'fullscreenUnsupported':'fullscreenHelp');return;}
+      if(!tg.isFullscreen)tg.requestFullscreen();
+    }else{
+      if(tg.isFullscreen&&typeof tg.exitFullscreen==='function')tg.exitFullscreen();
+      if(screenMode==='device'&&typeof tg.expand==='function')tg.expand();
+    }
+    syncFullscreenControl();
+  }catch(error){console.warn('Unable to apply Mini App display mode:',error);syncFullscreenControl('fullscreenFailed');}
+}
+$('screenMode').onchange=()=>{screenMode=$('screenMode').value;try{localStorage.setItem('mymoney-screen-mode',screenMode);}catch{}applyScreenMode();};
+if(tg?.onEvent){tg.onEvent('fullscreenChanged',()=>syncFullscreenControl());tg.onEvent('fullscreenFailed',()=>syncFullscreenControl('fullscreenFailed'));}
 syncFullscreenControl();
 $('retryLoad').onclick=()=>load();
 document.querySelectorAll('[data-quick]').forEach(button=>button.onclick=()=>{
@@ -339,11 +354,9 @@ document.querySelectorAll('[data-period]').forEach(button=>button.onclick=()=>{
 });
 $('refreshSummary').onclick=()=>loadSummary();
 $('month').value=today().slice(0,7);translate();
-// Expand the Mini App to Telegram's normal available view. Fullscreen is
-// controlled only by the Settings toggle so users can choose either mode.
 if (tg?.initData) {
   tg.ready();
-  tg.expand();
+  applyScreenMode(false);
 
   if (tg.isVersionAtLeast('8.0')) {
     tg.onEvent('fullscreenFailed', (event) => {
