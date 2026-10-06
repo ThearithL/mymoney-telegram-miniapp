@@ -609,6 +609,20 @@ def test_goal_deposits_withdrawals_history_and_notifications(client,monkeypatch)
     assert client.get('/api/data?month=2026-01',headers=headers()).json['transactions']==[]
     assert client.get(f'/api/goals/{goal_id}/entries',headers=headers(uid=456)).status_code==404
 
+def test_completed_goal_can_be_hidden_restored_and_deleted(client):
+    created=client.post('/api/goals',headers=headers(),json={'title':'Phone','currency':'USD',
+        'target':'100','saved':'100','request_id':'goal-archive-test'})
+    goal_id=created.json['id']
+    assert client.post(f'/api/goals/{goal_id}/archive',headers=headers(uid=456),json={'archived':True}).status_code==404
+    assert client.post(f'/api/goals/{goal_id}/archive',headers=headers(),json={'archived':True}).json['archived'] is True
+    assert client.get('/api/goals',headers=headers()).json['goals']==[]
+    hidden=client.get('/api/goals?include_hidden=1',headers=headers()).json['goals']
+    assert len(hidden)==1 and hidden[0]['archived']==1
+    assert client.post(f'/api/goals/{goal_id}/archive',headers=headers(),json={'archived':False}).json['archived'] is False
+    assert len(client.get('/api/goals',headers=headers()).json['goals'])==1
+    assert client.delete(f'/api/goals/{goal_id}',headers=headers()).status_code==200
+    assert client.get(f'/api/goals/{goal_id}/entries',headers=headers()).status_code==404
+
 @pytest.mark.parametrize('field,value',[('saved','-1'),('saved','NaN'),('target','0'),('title',''),('saved','0.001')])
 def test_invalid_goals(client,field,value):
     data={'title':'Laptop','currency':'USD','target':'800','saved':'0','request_id':'goal-invalid-123'}

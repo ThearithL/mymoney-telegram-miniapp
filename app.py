@@ -79,6 +79,7 @@ savings_goals = Table('savings_goals', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False, index=True),
     Column('title', String(80), nullable=False), Column('currency', String(3), nullable=False),
     Column('target', BigInteger, nullable=False), Column('saved', BigInteger, nullable=False),
+    Column('archived', Integer, nullable=False, default=0),
     Column('version', Integer, nullable=False, default=1), Column('request_id', String(64), nullable=False),
     UniqueConstraint('user_id','request_id'))
 savings_goal_entries = Table('savings_goal_entries', metadata,
@@ -205,6 +206,9 @@ def create_app(config=None):
     if 'username' not in {column['name'] for column in inspect(engine).get_columns('access_requests')}:
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE access_requests ADD COLUMN username VARCHAR(32)'))
+    if 'archived' not in {column['name'] for column in inspect(engine).get_columns('savings_goals')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE savings_goals ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'))
     app.extensions['engine'] = engine
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
@@ -1203,8 +1207,11 @@ def create_app(config=None):
     @auth
     def list_goals():
         now = int(time.time())
+        include_hidden=request.args.get('include_hidden')=='1'
         with engine.connect() as conn:
-            rows = conn.execute(select(savings_goals).where(savings_goals.c.user_id == g.user['id'])
+            query=select(savings_goals).where(savings_goals.c.user_id == g.user['id'])
+            if not include_hidden:query=query.where(savings_goals.c.archived==0)
+            rows = conn.execute(query
                 .order_by(savings_goals.c.id.desc())).mappings().all()
             activity = conn.execute(select(savings_goal_entries.c.goal_id, savings_goal_entries.c.direction,
                 func.sum(savings_goal_entries.c.amount)).where(savings_goal_entries.c.user_id == g.user['id'],
@@ -1301,6 +1308,22 @@ def create_app(config=None):
                 savings_goal_entries.c.goal_id==identity,savings_goal_entries.c.user_id==g.user['id'])
                 .order_by(savings_goal_entries.c.id.desc()).limit(50)).mappings().all()
         return {'entries':[dict(row) for row in entries]}
+
+    @app.post('/api/goals/<int:identity>/archive')
+    @auth
+    def archive_goal(identity):
+        archived=json_body().get('archived')
+        if type(archived) is not bool:abort(400,'Choose whether to hide or restore this goal.')
+        with engine.begin() as conn:
+            goal=conn.execute(select(savings_goals.c.saved,savings_goals.c.target).where(
+                savings_goals.c.id==identity,savings_goals.c.user_id==g.user['id'])).first()
+            if goal is None:abort(404,'Goal not found')
+            if archived and goal.saved<goal.target:abort(400,'Only completed goals can be hidden.')
+            changed=conn.execute(update(savings_goals).where(savings_goals.c.id==identity,
+                savings_goals.c.user_id==g.user['id']).values(archived=1 if archived else 0,
+                    version=savings_goals.c.version+1)).rowcount
+            if not changed:abort(404,'Goal not found')
+        return {'ok':True,'archived':archived}
 
     @app.post('/api/goals/<int:identity>/entries')
     @auth
