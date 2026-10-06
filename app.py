@@ -52,7 +52,7 @@ access_requests = Table('access_requests', metadata,
 
 registered_users = Table('registered_users', metadata,
     Column('user_id', BigInteger, primary_key=True), Column('name', String(200), nullable=False),
-    Column('last_seen', BigInteger, nullable=False))
+    Column('last_seen', BigInteger, nullable=False), Column('admin_label', String(80)))
 admin_actions = Table('admin_actions', metadata,
     Column('key', String(32), primary_key=True), Column('target_id', BigInteger, nullable=False),
     Column('action', String(20), nullable=False), Column('expires_at', BigInteger, nullable=False))
@@ -154,6 +154,9 @@ def create_app(config=None):
     if 'spending_type' not in {column['name'] for column in inspect(engine).get_columns('transactions')}:
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE transactions ADD COLUMN spending_type VARCHAR(12)'))
+    if 'admin_label' not in {column['name'] for column in inspect(engine).get_columns('registered_users')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE registered_users ADD COLUMN admin_label VARCHAR(80)'))
     app.extensions['engine'] = engine
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
@@ -176,6 +179,9 @@ def create_app(config=None):
         values = {'user_id': uid, 'name': str(user.get('first_name', 'User'))[:200], 'last_seen': int(time.time())}
         stmt = upsert(registered_users).values(**values)
         with engine.begin() as conn:
+            if conn.execute(select(access_requests.c.status).where(
+                    access_requests.c.user_id == uid)).scalar_one_or_none() == 'deleted':
+                return
             conn.execute(stmt.on_conflict_do_update(index_elements=['user_id'], set_={
                 'name': values['name'], 'last_seen': values['last_seen']}))
 
@@ -356,6 +362,8 @@ def create_app(config=None):
                 status='pending', request_key=uuid.uuid4().hex, notified_at=0
                 ).on_conflict_do_nothing(index_elements=['user_id']))
             row = conn.execute(select(access_requests).where(access_requests.c.user_id == uid)).mappings().one()
+            if row['status'] == 'deleted':
+                return '🔒 This account was removed. Contact the owner to be added again.'
             if row['status'] in ('rejected', 'revoked'):
                 return '❌ សំណើត្រូវបានបដិសេធ / Request rejected. Contact the owner.'
             if row['status'] == 'approved':
@@ -495,6 +503,99 @@ def create_app(config=None):
         with engine.connect() as conn:
             if not conn.execute(select(known.c.user_id).where(known.c.user_id == target_id)).first():
                 abort(404, 'User not found.')
+            if conn.execute(select(access_requests.c.user_id).where(
+                    access_requests.c.user_id == target_id,
+                    access_requests.c.status == 'deleted')).first():
+                abort(404, 'User account has been deleted.')
+
+    @app.post('/api/admin/users')
+    @auth
+    def admin_create_user():
+        require_owner()
+        body = json_body()
+        target_id, name = body.get('user_id'), body.get('name', '')
+        if type(target_id) is not int or not 0 < target_id <= 2**63 - 1:
+            abort(400, 'Enter a valid positive Telegram user ID.')
+        if target_id == admin or is_admin_user(target_id):
+            abort(409, 'This ID belongs to an administrator.')
+        if not isinstance(name, str) or len(name.strip()) > 80:
+            abort(400, 'Name must be at most 80 characters.')
+        display_name = name.strip() or f'User {target_id}'
+        with engine.begin() as conn:
+            exists = conn.execute(select(registered_users.c.user_id).where(
+                registered_users.c.user_id == target_id)).first()
+            if exists:
+                abort(409, 'This user is already registered.')
+            conn.execute(insert(registered_users).values(user_id=target_id, name=display_name,
+                last_seen=0, admin_label=name.strip() or None))
+            if engine.dialect.name == 'postgresql':
+                from sqlalchemy.dialects.postgresql import insert as upsert
+            else:
+                from sqlalchemy.dialects.sqlite import insert as upsert
+            conn.execute(upsert(access_requests).values(user_id=target_id, name=display_name,
+                status='approved', request_key=uuid.uuid4().hex, notified_at=0)
+                .on_conflict_do_update(index_elements=['user_id'], set_={
+                    'name': display_name, 'status': 'approved', 'request_key': uuid.uuid4().hex, 'notified_at': 0}))
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='create_user', at=int(time.time())))
+        delivered = telegram('sendMessage', {'chat_id': target_id,
+            'text': '✅ Your MyMoney access is ready. Open the bot to begin.',
+            'reply_markup': open_buttons()})
+        return {'ok': True, 'user_id': target_id, 'status': 'approved', 'notification_sent': delivered}, 201
+
+    @app.put('/api/admin/users/<int:target_id>')
+    @auth
+    def admin_edit_user(target_id):
+        require_owner()
+        require_known_user(target_id)
+        if target_id == admin or is_admin_user(target_id):
+            abort(409, 'Administrator labels cannot be changed here.')
+        body = json_body()
+        name = body.get('name')
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
+            abort(400, 'Name must contain 1–80 characters.')
+        with engine.begin() as conn:
+            changed = conn.execute(update(registered_users).where(
+                registered_users.c.user_id == target_id).values(admin_label=name.strip())).rowcount
+            if not changed:
+                abort(404, 'User not found.')
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='rename_user', at=int(time.time())))
+        return {'ok': True, 'name': name.strip()}
+
+    @app.delete('/api/admin/users/<int:target_id>')
+    @auth
+    def admin_delete_user(target_id):
+        require_owner()
+        if target_id == admin:
+            abort(400, 'The owner account cannot be deleted.')
+        if is_admin_user(target_id):
+            abort(409, 'Remove administrator access before deleting this account.')
+        body = json_body()
+        if str(body.get('confirm_id', '')).strip() != str(target_id):
+            abort(400, 'Type the exact Telegram ID to confirm deletion.')
+        require_known_user(target_id)
+        with engine.begin() as conn:
+            for table in (transactions, budgets, spending_budgets, savings_goals, budget_alerts,
+                          registered_users, delete_batches):
+                if 'user_id' in table.c:
+                    conn.execute(delete(table).where(table.c.user_id == target_id))
+            conn.execute(delete(admin_actions).where(admin_actions.c.target_id == target_id))
+            conn.execute(delete(admin_messages).where(admin_messages.c.target_id == target_id))
+            for table in personal_tables.values():
+                if 'user_id' in table.c:
+                    conn.execute(delete(table).where(table.c.user_id == target_id))
+            if engine.dialect.name == 'postgresql':
+                from sqlalchemy.dialects.postgresql import insert as upsert
+            else:
+                from sqlalchemy.dialects.sqlite import insert as upsert
+            conn.execute(upsert(access_requests).values(user_id=target_id, name='Deleted user', status='deleted',
+                request_key=uuid.uuid4().hex, notified_at=0).on_conflict_do_update(index_elements=['user_id'],
+                    set_={'name': 'Deleted user', 'status': 'deleted', 'request_key': uuid.uuid4().hex, 'notified_at': 0}))
+            # Keep the audit trail so the owner can see who removed the account.
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                action='delete_user', at=int(time.time())))
+        return {'ok': True, 'deleted_user_id': target_id}
 
     @app.get('/api/admin/overview')
     @auth
@@ -520,11 +621,11 @@ def create_app(config=None):
                     transactions.c.day >= month_start, transactions.c.day < month_end)
                 .group_by(transactions.c.currency, transactions.c.category)).all()
         status_by_id = dict(statuses)
-        buckets = {'admin': 0, 'approved': 0, 'pending': 0, 'revoked': 0, 'not_requested': 0}
+        buckets = {'admin': 0, 'approved': 0, 'pending': 0, 'revoked': 0, 'deleted': 0, 'not_requested': 0}
         for uid in ids:
             status = 'admin' if uid in admins else status_by_id.get(uid, 'approved' if uid in allowed else 'not_requested')
             buckets[status if status in buckets else 'not_requested'] += 1
-        return {'month': month, 'user_count': len(ids), 'transaction_count': record_count,
+        return {'month': month, 'user_count': len(ids) - buckets['deleted'], 'transaction_count': record_count,
                 'statuses': buckets,
                 'expenses': [{'currency': currency, 'amount': int(amount or 0)} for currency, amount in monthly_expenses],
                 'categories': [{'currency': currency, 'category': category, 'amount': int(amount or 0)}
@@ -617,13 +718,15 @@ def create_app(config=None):
                       select(transactions.c.user_id), select(budgets.c.user_id),
                       select(app_admins.c.user_id)).subquery()
         with engine.connect() as conn:
-            rows = conn.execute(select(known.c.user_id, registered_users.c.name,
+            rows = conn.execute(select(known.c.user_id,
+                    func.coalesce(registered_users.c.admin_label, registered_users.c.name).label('name'),
                     registered_users.c.last_seen, access_requests.c.status,
                     func.count(transactions.c.id).label('transaction_count'))
                 .select_from(known.outerjoin(registered_users, registered_users.c.user_id == known.c.user_id)
                     .outerjoin(access_requests, access_requests.c.user_id == known.c.user_id)
                     .outerjoin(transactions, transactions.c.user_id == known.c.user_id))
-                .group_by(known.c.user_id, registered_users.c.name, registered_users.c.last_seen,
+                .group_by(known.c.user_id, registered_users.c.name, registered_users.c.admin_label,
+                          registered_users.c.last_seen,
                           access_requests.c.status).order_by(known.c.user_id)).mappings().all()
         users = []
         for row in rows:
@@ -660,7 +763,7 @@ def create_app(config=None):
                     func.sum(transactions.c.amount)).where(transactions.c.user_id == target_id)
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
         status = access or ('approved' if target_id in allowed else 'not_requested')
-        return {'user': {'id': target_id, 'name': (user or {}).get('name', 'User'),
+        return {'user': {'id': target_id, 'name': (user or {}).get('admin_label') or (user or {}).get('name', 'User'),
                     'last_seen': (user or {}).get('last_seen'), 'status': status},
                 'totals': [{'currency': c, 'kind': k, 'amount': int(amount)} for c, k, amount in totals],
                 'budgets': [dict(row) for row in limits],

@@ -159,7 +159,7 @@ def test_admin_dashboard_and_owner_transaction_crud_and_messaging(access_client)
     dashboard=client.get('/api/admin/overview',headers=headers())
     assert dashboard.status_code==200
     assert dashboard.json['user_count']>=2
-    assert set(dashboard.json['statuses'])=={'admin','approved','pending','revoked','not_requested'}
+    assert set(dashboard.json['statuses'])=={'admin','approved','pending','revoked','deleted','not_requested'}
     assert client.get('/api/admin/overview',headers=headers(uid=456)).status_code==403
 
     body=payload(request_id='admin-created-record',day=__import__('datetime').date.today().isoformat())
@@ -183,6 +183,40 @@ def test_admin_dashboard_and_owner_transaction_crud_and_messaging(access_client)
     assert client.post('/api/admin/admins',headers=headers(),json={'user_id':456,'confirm':True}).status_code==201
     assert client.post('/api/admin/users/456/message',headers=headers(uid=456),json={'text':'Not owner'}).status_code==403
     assert client.delete(f'/api/admin/users/456/transactions/{identity}',headers=headers(uid=456)).status_code==403
+
+def test_owner_can_create_filter_and_permanently_remove_user_with_exact_id_confirmation(access_client):
+    client,calls,_=access_client
+    created=client.post('/api/admin/users',headers=headers(),json={'user_id':789,'name':'New personal user'})
+    assert created.status_code==201 and created.json['status']=='approved'
+    assert calls[-1][1]['chat_id']==789
+    detail=client.get('/api/admin/users/789',headers=headers())
+    assert detail.status_code==200 and detail.json['user']['name']=='New personal user'
+    renamed=client.put('/api/admin/users/789',headers=headers(),json={'name':'Updated display label'})
+    assert renamed.status_code==200 and client.get('/api/admin/users/789',headers=headers()).json['user']['name']=='Updated display label'
+    assert client.post('/api/admin/users',headers=headers(),json={'user_id':789}).status_code==409
+    assert client.post('/api/admin/users/789/transactions',headers=headers(),json=payload(request_id='created-for-removal')).status_code==201
+    assert client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'123'}).status_code==400
+    assert client.delete('/api/admin/users/123',headers=headers(),json={'confirm_id':'123'}).status_code==400
+    assert client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'789'}).json=={
+        'ok':True,'deleted_user_id':789}
+    removed_detail=client.get('/api/admin/users/789',headers=headers()).json
+    assert removed_detail['user']['status']=='deleted' and removed_detail['transactions']==[]
+    assert client.get('/api/admin/users/789/messages',headers=headers()).status_code==404
+    assert client.get('/api/data',headers=headers(uid=789)).status_code==403
+    assert client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'789'}).status_code==404
+    assert message(client,789,'/request').status_code==200 and 'account was removed' in calls[-1][1]['text']
+    # An additional admin can view users but cannot create or delete them.
+    assert client.post('/api/admin/admins',headers=headers(),json={'user_id':456,'confirm':True}).status_code==201
+    assert client.post('/api/admin/users',headers=headers(uid=456),json={'user_id':790}).status_code==403
+    assert client.delete('/api/admin/users/456',headers=headers(uid=456),json={'confirm_id':'456'}).status_code==403
+
+def test_deleted_user_stays_blocked_even_if_legacy_allowlisted(tmp_path):
+    client=create_app({'TESTING':True,'BOT_TOKEN':TOKEN,'ADMIN_USER_ID':'123','ALLOWED_USER_IDS':'789',
+        'DATABASE_URL':'sqlite:///'+str(tmp_path/'deleted-allowlist.db')}).test_client()
+    assert client.get('/api/data',headers=headers(uid=789)).status_code==200
+    removed=client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'789'})
+    assert removed.status_code==200
+    assert client.get('/api/data',headers=headers(uid=789)).status_code==403
 
 def test_recent_activity_button_and_command_are_private_and_show_latest_five(access_client):
     client,calls,_=access_client

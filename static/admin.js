@@ -1,6 +1,7 @@
 'use strict';
 let adminSelectedUser = null;
 let adminOverview = null;
+let adminUsersCache = [];
 
 async function loadAdminOverview(){
   try{
@@ -41,20 +42,39 @@ async function loadAdminConsole(){
   $('adminUsers').replaceChildren();
   $('adminUserDetail').hidden=true;
   $('adminOwnerTools').hidden=!state.user?.is_owner;
+  $('adminAddUserCard').hidden=!state.user?.is_owner;
   await loadAdminOverview();
   try{
     const result=await api('/api/admin/users');
+    adminUsersCache=result.users;
     status.textContent=`${result.users.length} users / អ្នកប្រើ ${result.users.length} នាក់`;
-    if(!result.users.length)$('adminUsers').append(node('p','No users found. / រកមិនឃើញអ្នកប្រើទេ។','muted'));
-    for(const user of result.users){
+    renderAdminUserList();
+    if(state.user?.is_admin)await loadAdminAccounts();
+  }catch(error){status.textContent=error.message;}
+}
+
+function renderAdminUserList(){
+    const list=$('adminUsers');list.replaceChildren();
+    const query=$('adminUserSearch').value.trim().toLowerCase(),status=$('adminUserStatusFilter').value;
+    const users=adminUsersCache.filter(user=>(status?user.status===status:user.status!=='deleted')&&(!query||`${user.name} ${user.id}`.toLowerCase().includes(query)));
+    if(!users.length){list.append(node('p','No users match these filters. / រកមិនឃើញអ្នកប្រើតាមលក្ខខណ្ឌនេះទេ។','muted'));return;}
+    for(const user of users){
       const row=node('div',undefined,'admin-user-row');
       const summary=node('div',undefined,'admin-user-copy');
       summary.append(node('strong',`${user.name} · ${user.id}`),node('small',`${user.status} · ${user.transaction_count} records`));
       const view=node('button','View / មើល','secondary');view.type='button';view.onclick=()=>loadAdminUser(user.id);
-      row.append(summary,view);$('adminUsers').append(row);
+      row.append(summary,view);
+      if(state.user?.is_owner&&!['admin','deleted'].includes(user.status)){const remove=node('button','Delete / លុប','text-btn');remove.type='button';remove.onclick=()=>deleteAdminUser(user.id,user.name);row.append(remove);}
+      list.append(row);
     }
-    if(state.user?.is_admin)await loadAdminAccounts();
-  }catch(error){status.textContent=error.message;}
+}
+
+async function deleteAdminUser(id,name){
+  if(!confirm(`Permanently delete ${name} (${id}) and all of their MyMoney data? This cannot be undone.`))return;
+  const typed=prompt(`Type Telegram ID ${id} to confirm permanent deletion:`);
+  if(typed!==String(id))return;
+  try{await api(`/api/admin/users/${id}`,{method:'DELETE',body:JSON.stringify({confirm_id:typed})});toast('User and data deleted / បានលុបអ្នកប្រើ និងទិន្នន័យ');$('adminUserDetail').hidden=true;await loadAdminConsole();}
+  catch(error){$('adminStatus').textContent=error.message;}
 }
 
 async function loadAdminAccounts(){
@@ -86,18 +106,29 @@ async function loadAdminUser(id){
     const data=await api(`/api/admin/users/${id}`);panel.replaceChildren();
     const heading=node('div',undefined,'section-title');heading.append(node('h3',`${data.user.name} · ${id}`),node('span',data.user.status,'pill'));panel.append(heading);
     panel.append(node('p',`Last active: ${data.user.last_seen?new Date(data.user.last_seen*1000).toLocaleString():'Not seen yet'}`,'muted'));
-    const actions=node('div',undefined,'history-actions');
-    for(const [status,label] of [['approved','Approve access / អនុញ្ញាត'],['revoked','Revoke access / ដកសិទ្ធិ']]){
-      const button=node('button',label,status==='approved'?'secondary':'text-btn');button.type='button';button.disabled=data.user.status===status;
-      button.onclick=async()=>{
-        if(!confirm(`${status==='approved'?'Approve':'Revoke'} access for ${data.user.name} (${id})?`))return;
-        button.disabled=true;
-        try{await api(`/api/admin/users/${id}/access`,{method:'PUT',body:JSON.stringify({status,confirm:true})});toast('Access updated / បានធ្វើបច្ចុប្បន្នភាពសិទ្ធិ');await loadAdminConsole();await loadAdminUser(id);}
-        catch(error){panel.append(node('p',error.message,'form-status'));button.disabled=false;}
-      };
-      actions.append(button);
+    if(state.user?.is_owner&&!['admin','deleted'].includes(data.user.status)){
+      const rename=document.createElement('form');rename.className='admin-crud';rename.append(node('h4','Edit user display name / កែឈ្មោះអ្នកប្រើ'));
+      const field=document.createElement('input');field.maxLength=80;field.required=true;field.value=data.user.name;
+      const label=document.createElement('label');label.append(node('span','Name / ឈ្មោះ'),field);rename.append(label);
+      const save=node('button','Save name / រក្សាទុកឈ្មោះ','secondary');save.type='submit';rename.append(save);
+      rename.onsubmit=async event=>{event.preventDefault();save.disabled=true;try{await api(`/api/admin/users/${id}`,{method:'PUT',body:JSON.stringify({name:field.value})});toast('User name updated');await loadAdminConsole();await loadAdminUser(id);}catch(error){panel.append(node('p',error.message,'form-status'));save.disabled=false;}};
+      panel.append(rename);
+      const deleteButton=node('button','Delete user and all data / លុបអ្នកប្រើ និងទិន្នន័យ','danger');deleteButton.type='button';deleteButton.onclick=()=>deleteAdminUser(id,data.user.name);panel.append(deleteButton);
     }
-    panel.append(actions);
+    if(data.user.status!=='deleted'){
+      const actions=node('div',undefined,'history-actions');
+      for(const [status,label] of [['approved','Approve access / អនុញ្ញាត'],['revoked','Revoke access / ដកសិទ្ធិ']]){
+        const button=node('button',label,status==='approved'?'secondary':'text-btn');button.type='button';button.disabled=data.user.status===status;
+        button.onclick=async()=>{
+          if(!confirm(`${status==='approved'?'Approve':'Revoke'} access for ${data.user.name} (${id})?`))return;
+          button.disabled=true;
+          try{await api(`/api/admin/users/${id}/access`,{method:'PUT',body:JSON.stringify({status,confirm:true})});toast('Access updated / បានធ្វើបច្ចុប្បន្នភាពសិទ្ធិ');await loadAdminConsole();await loadAdminUser(id);}
+          catch(error){panel.append(node('p',error.message,'form-status'));button.disabled=false;}
+        };
+        actions.append(button);
+      }
+      panel.append(actions);
+    }else panel.append(node('p','Account removed; create this Telegram ID again to restore access. / គណនីបានលុបរួចហើយ។ បញ្ចូល ID ម្ដងទៀតដើម្បីបើកឡើងវិញ។','muted'));
     panel.append(node('h4','All-time totals / សរុបកំណត់ត្រា'));
     if(data.totals.length){for(const item of data.totals)panel.append(node('p',`${item.kind}: ${money(item.amount,item.currency)}`));}
     else panel.append(node('p','No transactions. / មិនទាន់មានកំណត់ត្រា។','muted'));
@@ -194,8 +225,20 @@ $('toggleAdminMode').onclick=()=>{
 };
 $('adminBack').onclick=()=>showPage('settings');
 $('refreshAdmin').onclick=loadAdminConsole;
-$('refreshAdminDashboard').onclick=loadAdminOverview;
+$('adminUserSearch').oninput=renderAdminUserList;
+$('adminUserStatusFilter').onchange=renderAdminUserList;
+$('adminAddUserForm').onsubmit=async event=>{
+  event.preventDefault();const status=$('adminAddUserStatus'),button=event.submitter||$('adminAddUserForm').querySelector('button');
+  const userId=Number($('adminNewUserId').value),name=$('adminNewUserName').value;
+  if(!Number.isSafeInteger(userId)||userId<=0){status.textContent='Enter a valid Telegram ID.';return;}
+  if(!confirm(`Create and approve MyMoney access for Telegram user ${userId}?`))return;
+  button.disabled=true;status.textContent='Creating user…';
+  try{const result=await api('/api/admin/users',{method:'POST',body:JSON.stringify({user_id:userId,name})});status.textContent=result.notification_sent?'User created, approved and notified.':'User created and approved. They need to start the bot before Telegram can message them.';$('adminAddUserForm').reset();await loadAdminConsole();}
+  catch(error){status.textContent=error.message;}
+  finally{button.disabled=false;}
+};
 $('adminChartCurrency').onchange=renderAdminDonut;
+$('refreshAdminDashboard').onclick=loadAdminOverview;
 $('addAdminForm').onsubmit=async event=>{
   event.preventDefault();const input=$('newAdminId'),status=$('addAdminStatus'),button=event.submitter||$('addAdminForm').querySelector('button');
   const userId=Number(input.value);if(!Number.isSafeInteger(userId)||userId<=0){status.textContent='Enter a valid Telegram ID.';return;}

@@ -17,6 +17,7 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Owner admin dashboard: USD/KHR monthly expense donut charts, user/access totals, user records, message history and admin audit.
 - Owner can send a private Telegram message to a selected user and review the delivery history.
 - Owner-only transaction CRUD in the Admin Console: create and edit a user's records; deletes go to that user's recoverable Trash.
+- User CRUD in Admin Console: create/approve by Telegram ID, search/filter, edit a persistent admin display label, change access, or permanently remove a non-admin account and its personal data after typing the exact ID. A minimal deleted-access marker remains so a legacy allowlist cannot restore access. The owner account and admin accounts are protected.
 - Request access button, admin Approve/Reject buttons, persistent access decisions in Neon.
 - `/id` works before approval; `/request` submits access; `/requests` recovers pending requests for the owner.
 - `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
