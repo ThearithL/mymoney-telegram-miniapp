@@ -81,6 +81,14 @@ savings_goals = Table('savings_goals', metadata,
     Column('target', BigInteger, nullable=False), Column('saved', BigInteger, nullable=False),
     Column('version', Integer, nullable=False, default=1), Column('request_id', String(64), nullable=False),
     UniqueConstraint('user_id','request_id'))
+savings_goal_entries = Table('savings_goal_entries', metadata,
+    Column('id', Integer, primary_key=True), Column('goal_id', Integer, nullable=False, index=True),
+    Column('user_id', BigInteger, nullable=False, index=True), Column('direction', String(16), nullable=False),
+    Column('amount', BigInteger, nullable=False), Column('created_at', BigInteger, nullable=False),
+    Column('request_id', String(64), nullable=False), UniqueConstraint('user_id','request_id'))
+goal_alerts = Table('savings_goal_alerts', metadata,
+    Column('goal_id', Integer, primary_key=True), Column('level', Integer, primary_key=True),
+    Column('user_id', BigInteger, nullable=False), Column('created_at', BigInteger, nullable=False))
 
 budget_alerts = Table('budget_alerts', metadata,
     Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),
@@ -751,7 +759,8 @@ def create_app(config=None):
             abort(400, 'Type the exact Telegram ID to confirm deletion.')
         require_known_user(target_id)
         with engine.begin() as conn:
-            for table in (transactions, budgets, spending_budgets, savings_goals, budget_alerts,
+            for table in (transactions, budgets, spending_budgets, savings_goal_entries, goal_alerts,
+                          savings_goals, budget_alerts,
                           registered_users, delete_batches, admin_login_attempts):
                 if 'user_id' in table.c:
                     conn.execute(delete(table).where(table.c.user_id == target_id))
@@ -1168,13 +1177,52 @@ def create_app(config=None):
                 count += len(deleted_rows)
         return {'deleted':count}
 
+    def claim_goal_alert_levels(conn, goal, old_saved, new_saved):
+        levels=[]
+        if new_saved <= old_saved:
+            return levels
+        if engine.dialect.name=='postgresql':
+            from sqlalchemy.dialects.postgresql import insert as alert_insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as alert_insert
+        for level in (50,80,100):
+            if old_saved*100 < goal['target']*level <= new_saved*100:
+                inserted=conn.execute(alert_insert(goal_alerts).values(goal_id=goal['id'],
+                    user_id=goal['user_id'],level=level,created_at=int(time.time()))
+                    .on_conflict_do_nothing(index_elements=['goal_id','level'])
+                    .returning(goal_alerts.c.level)).scalar_one_or_none()
+                if inserted:levels.append(level)
+        return levels
+
+    def send_goal_alerts(uid, title, saved, target, currency, levels):
+        for level in levels:
+            telegram('sendMessage',{'chat_id':uid,'text':
+                f'🎯 Savings goal update / សន្សំបានដល់ {level}%\n{title}\n{display_money(saved,currency)} / {display_money(target,currency)}'})
+
     @app.get('/api/goals')
     @auth
     def list_goals():
+        now = int(time.time())
         with engine.connect() as conn:
             rows = conn.execute(select(savings_goals).where(savings_goals.c.user_id == g.user['id'])
                 .order_by(savings_goals.c.id.desc())).mappings().all()
-        return {'goals':[serialize(row) for row in rows]}
+            activity = conn.execute(select(savings_goal_entries.c.goal_id, savings_goal_entries.c.direction,
+                func.sum(savings_goal_entries.c.amount)).where(savings_goal_entries.c.user_id == g.user['id'],
+                savings_goal_entries.c.created_at >= now - 30 * 86400).group_by(
+                savings_goal_entries.c.goal_id, savings_goal_entries.c.direction)).all()
+        net_30_days = {}
+        for goal_id, direction, total in activity:
+            if direction in ('add','withdraw'):
+                net_30_days[goal_id] = net_30_days.get(goal_id, 0) + (int(total) if direction == 'add' else -int(total))
+        result=[]
+        for row in rows:
+            goal=serialize(row)
+            goal['remaining']=max(0,row['target']-row['saved'])
+            goal['percent']=min(100,round(row['saved']*100/row['target']))
+            recent_net=net_30_days.get(row['id'],0)
+            goal['estimated_days']=max(1,(goal['remaining']*30+recent_net-1)//recent_net) if goal['remaining'] and recent_net>0 else None
+            result.append(goal)
+        return {'goals':result}
 
     def goal_values(body):
         title = body.get('title')
@@ -1202,6 +1250,9 @@ def create_app(config=None):
             with engine.begin() as conn:
                 result=conn.execute(insert(savings_goals).values(**values,user_id=g.user['id'],version=1,request_id=key))
                 identity=result.inserted_primary_key[0]
+                if values['saved']:
+                    conn.execute(insert(savings_goal_entries).values(goal_id=identity,user_id=g.user['id'],
+                        direction='opening',amount=values['saved'],created_at=int(time.time()),request_id=key))
         except IntegrityError:
             with engine.connect() as conn:
                 identity=conn.execute(select(savings_goals.c.id).where(savings_goals.c.user_id==g.user['id'],savings_goals.c.request_id==key)).scalar_one()
@@ -1215,6 +1266,7 @@ def create_app(config=None):
         version=body.get('version')
         if type(version) is not int or version<1:
             abort(400,'Invalid goal version')
+        notice_levels=[]
         with engine.begin() as conn:
             current=conn.execute(select(savings_goals).where(savings_goals.c.id==identity,savings_goals.c.user_id==g.user['id'])).mappings().first()
             if not current:
@@ -1226,12 +1278,76 @@ def create_app(config=None):
                 .values(**values,version=version+1)).rowcount
             if not changed:
                 abort(409,'Goal changed elsewhere. Close this form, refresh, and try again.')
+            difference=values['saved']-current['saved']
+            if difference:
+                conn.execute(insert(savings_goal_entries).values(goal_id=identity,user_id=g.user['id'],
+                    direction='adjust_up' if difference>0 else 'adjust_down',amount=abs(difference),
+                    created_at=int(time.time()),request_id='edit-'+uuid.uuid4().hex))
+                if difference>0:
+                    notice_levels=claim_goal_alert_levels(conn,{**current,'user_id':g.user['id']},
+                        current['saved'],values['saved'])
+        if notice_levels:send_goal_alerts(g.user['id'],values['title'],values['saved'],values['target'],values['currency'],notice_levels)
         return {'ok':True}
+
+    @app.get('/api/goals/<int:identity>/entries')
+    @auth
+    def list_goal_entries(identity):
+        with engine.connect() as conn:
+            exists=conn.execute(select(savings_goals.c.id).where(savings_goals.c.id==identity,
+                savings_goals.c.user_id==g.user['id'])).first()
+            if exists is None:abort(404,'Goal not found')
+            entries=conn.execute(select(savings_goal_entries.c.id,savings_goal_entries.c.direction,
+                savings_goal_entries.c.amount,savings_goal_entries.c.created_at).where(
+                savings_goal_entries.c.goal_id==identity,savings_goal_entries.c.user_id==g.user['id'])
+                .order_by(savings_goal_entries.c.id.desc()).limit(50)).mappings().all()
+        return {'entries':[dict(row) for row in entries]}
+
+    @app.post('/api/goals/<int:identity>/entries')
+    @auth
+    def add_goal_entry(identity):
+        body=json_body();direction=body.get('direction');key=body.get('request_id','')
+        if direction not in ('add','withdraw'):abort(400,'Choose add or withdraw.')
+        if not isinstance(key,str) or not 8<=len(key)<=64:abort(400,'Missing request ID')
+        notice_levels=[];goal_title='';currency='';new_saved=0;target=0
+        with engine.begin() as conn:
+            prior=conn.execute(select(savings_goal_entries).where(savings_goal_entries.c.user_id==g.user['id'],
+                savings_goal_entries.c.request_id==key)).mappings().first()
+            if prior:
+                prior_goal=conn.execute(select(savings_goals).where(savings_goals.c.id==identity,
+                    savings_goals.c.user_id==g.user['id'])).mappings().first()
+                if (prior['goal_id']!=identity or prior['direction']!=direction or not prior_goal or
+                        amount_units(body.get('amount'),prior_goal['currency'])!=prior['amount']):
+                    abort(409,'Request ID was already used.')
+                saved=prior_goal['saved']
+                return {'ok':True,'duplicate':True,'saved':saved,
+                    'remaining':max(0,prior_goal['target']-saved),
+                    'percent':min(100,round(saved*100/prior_goal['target'])),'version':prior_goal['version']}
+            goal=conn.execute(select(savings_goals).where(savings_goals.c.id==identity,
+                savings_goals.c.user_id==g.user['id']).with_for_update()).mappings().first()
+            if goal is None:abort(404,'Goal not found')
+            amount=amount_units(body.get('amount'),goal['currency'])
+            old_saved=goal['saved'];delta=amount if direction=='add' else -amount
+            new_saved=old_saved+delta
+            if new_saved<0:abort(400,'You cannot withdraw more than the saved balance.')
+            conn.execute(insert(savings_goal_entries).values(goal_id=identity,user_id=g.user['id'],
+                direction=direction,amount=amount,created_at=int(time.time()),request_id=key))
+            changed=conn.execute(update(savings_goals).where(savings_goals.c.id==identity,
+                savings_goals.c.user_id==g.user['id'],savings_goals.c.version==goal['version'])
+                .values(saved=new_saved,version=goal['version']+1)).rowcount
+            if not changed:abort(409,'Goal changed. Refresh and try again.')
+            goal_title=goal['title'];currency=goal['currency'];target=goal['target']
+            if direction=='add':notice_levels=claim_goal_alert_levels(conn,goal,old_saved,new_saved)
+        if notice_levels:send_goal_alerts(g.user['id'],goal_title,new_saved,target,currency,notice_levels)
+        return {'ok':True,'saved':new_saved,'remaining':max(0,target-new_saved),'percent':min(100,round(new_saved*100/target))}
 
     @app.delete('/api/goals/<int:identity>')
     @auth
     def delete_goal(identity):
         with engine.begin() as conn:
+            conn.execute(delete(savings_goal_entries).where(savings_goal_entries.c.goal_id==identity,
+                savings_goal_entries.c.user_id==g.user['id']))
+            conn.execute(delete(goal_alerts).where(goal_alerts.c.goal_id==identity,
+                goal_alerts.c.user_id==g.user['id']))
             changed=conn.execute(delete(savings_goals).where(savings_goals.c.id==identity,savings_goals.c.user_id==g.user['id'])).rowcount
             if not changed:
                 abort(404,'Goal not found')

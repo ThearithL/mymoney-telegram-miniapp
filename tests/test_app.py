@@ -582,6 +582,33 @@ def test_goals_ownership_precision_versions_and_idempotence(client):
     assert not client.get('/api/goals',headers=headers()).json['goals']
     assert not client.get('/api/data?month=2026-01',headers=headers()).json['transactions']
 
+def test_goal_deposits_withdrawals_history_and_notifications(client,monkeypatch):
+    calls=[]
+    class Result:
+        ok=True
+        def json(self):return {'ok':True}
+    monkeypatch.setattr('app.requests.post',lambda url,json,timeout:(calls.append(json) or Result()))
+    created=client.post('/api/goals',headers=headers(),json={'title':'Laptop','currency':'USD',
+        'target':'100','saved':'20','request_id':'goal-history-test'})
+    goal_id=created.json['id']
+    add={'direction':'add','amount':'40','request_id':'goal-deposit-123'}
+    response=client.post(f'/api/goals/{goal_id}/entries',headers=headers(),json=add)
+    assert response.status_code==200 and response.json['saved']==6000 and response.json['percent']==60
+    assert client.post(f'/api/goals/{goal_id}/entries',headers=headers(),json=add).json['duplicate'] is True
+    withdraw={'direction':'withdraw','amount':'10','request_id':'goal-withdraw-123'}
+    assert client.post(f'/api/goals/{goal_id}/entries',headers=headers(),json=withdraw).json['saved']==5000
+    assert client.post(f'/api/goals/{goal_id}/entries',headers=headers(),json={'direction':'withdraw',
+        'amount':'51','request_id':'too-much-withdraw'}).status_code==400
+    finish={'direction':'add','amount':'50','request_id':'goal-finish-123'}
+    assert client.post(f'/api/goals/{goal_id}/entries',headers=headers(),json=finish).json['remaining']==0
+    goal=client.get('/api/goals',headers=headers()).json['goals'][0]
+    assert goal['saved']==10000 and goal['percent']==100 and goal['remaining']==0
+    assert len(calls)==3 and '100%' in calls[-1]['text']
+    entries=client.get(f'/api/goals/{goal_id}/entries',headers=headers()).json['entries']
+    assert [row['direction'] for row in entries]==['add','withdraw','add','opening']
+    assert client.get('/api/data?month=2026-01',headers=headers()).json['transactions']==[]
+    assert client.get(f'/api/goals/{goal_id}/entries',headers=headers(uid=456)).status_code==404
+
 @pytest.mark.parametrize('field,value',[('saved','-1'),('saved','NaN'),('target','0'),('title',''),('saved','0.001')])
 def test_invalid_goals(client,field,value):
     data={'title':'Laptop','currency':'USD','target':'800','saved':'0','request_id':'goal-invalid-123'}
