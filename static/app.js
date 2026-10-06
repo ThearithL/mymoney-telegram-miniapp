@@ -25,6 +25,10 @@ Object.assign(km, {
 });
 Object.assign(en,{goals:'Savings',newGoal:'+ New goal',goalsHelp:'Add or withdraw savings and review the history. Savings do not create or change expenses.',goalName:'Goal name',goalTarget:'Target amount',goalSaved:'Total saved',editGoal:'Edit goal',quickAddSavings:'Manage savings',deleteGoal:'Delete goal',emptyGoals:'Your next goal starts here. Add a laptop, tuition or travel fund.',appearance:'Appearance',system:'Use device setting',light:'Light',dark:'Dark',fullscreen:'Fullscreen',retry:'Try again',greetingTag:'Small entries. A clearer picture.',welcome:'Hello',saving:'Saving…',fullscreenUnavailable:'Fullscreen is unavailable in this Telegram client.',goalComplete:'Goal reached!',goalHidden:'Hidden',goalHiddenDone:'Completed goal hidden.',goalRestoredDone:'Goal restored.',hideGoal:'Hide completed goal',restoreGoal:'Restore goal',removeGoal:'Delete goal',showHiddenGoals:'Show hidden goals',hideHiddenGoals:'Hide hidden goals',confirmGoalDelete:'Delete this goal and its savings history permanently?',goalRemaining:'Left to save',goalEstimate:'Estimated time',goalNoEstimate:'Add savings for an estimate',goalDays:'days',goalEntryAmount:'Amount to add/withdraw',addSavings:'＋ Add money',withdrawSavings:'− Withdraw',goalHistory:'Savings history',goalNoHistory:'No savings activity yet.',goalAddDone:'Savings added.',goalWithdrawDone:'Savings withdrawn.',goalAdd:'Added',goalWithdraw:'Withdrawn',goalOpening:'Starting balance',goalAdjustUp:'Manual increase',goalAdjustDown:'Manual decrease',confirmGoalDelete:'Delete this goal and its savings history permanently?'});
 Object.assign(km,{goals:'សន្សំ',newGoal:'＋ គោលដៅថ្មី',goalsHelp:'បន្ថែម ឬដកប្រាក់សន្សំ ហើយមើលប្រវត្តិបាន។ វាមិនបង្កើត ឬប្ដូរកំណត់ត្រាចំណាយទេ។',goalName:'ឈ្មោះគោលដៅ',goalTarget:'គោលដៅប្រាក់',goalSaved:'សន្សំបានសរុប',editGoal:'កែគោលដៅ',quickAddSavings:'គ្រប់គ្រងប្រាក់សន្សំ',deleteGoal:'លុបគោលដៅ',emptyGoals:'ចាប់ផ្ដើមគោលដៅថ្មី៖ Laptop ថ្លៃសាលា ឬដំណើរកម្សាន្ត។',appearance:'រូបរាង',system:'តាមឧបករណ៍',light:'ភ្លឺ',dark:'ងងឹត',fullscreen:'ពេញអេក្រង់',retry:'ព្យាយាមម្ដងទៀត',greetingTag:'កត់ត្រាបន្តិច រៀបចំបានច្បាស់',welcome:'សួស្ដី',saving:'កំពុងរក្សាទុក…',fullscreenUnavailable:'Telegram នេះមិនអាចបើកពេញអេក្រង់បានទេ។',goalComplete:'សម្រេចគោលដៅហើយ!',goalHidden:'បានលាក់',goalHiddenDone:'បានលាក់គោលដៅដែលសម្រេចរួច។',goalRestoredDone:'បានស្ដារគោលដៅវិញ។',hideGoal:'លាក់គោលដៅដែលសម្រេច',restoreGoal:'ស្ដារគោលដៅ',removeGoal:'លុបគោលដៅ',showHiddenGoals:'បង្ហាញគោលដៅដែលលាក់',hideHiddenGoals:'លាក់គោលដៅដែលបានបង្ហាញ',confirmGoalDelete:'លុបគោលដៅ និងប្រវត្តិសន្សំរបស់វាជាអចិន្ត្រៃយ៍ឬ?',goalRemaining:'នៅខ្វះ',goalEstimate:'ប៉ាន់ស្មានរយៈពេល',goalNoEstimate:'បន្ថែមប្រាក់សន្សំ ដើម្បីប៉ាន់ស្មាន',goalDays:'ថ្ងៃ',goalEntryAmount:'ចំនួនប្រាក់បន្ថែម/ដក',addSavings:'＋ បន្ថែមប្រាក់',withdrawSavings:'− ដកប្រាក់',goalHistory:'ប្រវត្តិសន្សំ',goalNoHistory:'មិនទាន់មានប្រវត្តិសន្សំទេ។',goalAddDone:'បានបន្ថែមប្រាក់សន្សំ។',goalWithdrawDone:'បានដកប្រាក់សន្សំ។',goalAdd:'បន្ថែម',goalWithdraw:'ដកប្រាក់',goalOpening:'ប្រាក់សន្សំដំបូង',goalAdjustUp:'កែបង្កើនសមតុល្យ',goalAdjustDown:'កែកាត់បន្ថយសមតុល្យ',confirmGoalDelete:'លុបគោលដៅ និងប្រវត្តិសន្សំរបស់វាជាអចិន្ត្រៃយ៍ឬ?'});
+Object.assign(en,{goalActiveSection:'In progress',goalCompletedSection:'Completed goals',goalHiddenSection:'Hidden goals',goalActiveCount:'Active goals',goalCompletedCount:'Completed',goalSavedTotal:'Saved total · selected currency',goalQuickAmounts:'Quick amounts',emptyActiveGoals:'No active goals. Create one for your next plan.',emptyCompletedGoals:'Completed goals will appear here.',noHiddenGoals:'No hidden goals.',showHiddenGoals:'Show hidden goals',hideHiddenGoals:'Hide hidden goals'});
+Object.assign(km,{goalActiveSection:'កំពុងសន្សំ',goalCompletedSection:'សម្រេចហើយ',goalHiddenSection:'គោលដៅដែលបានលាក់',goalActiveCount:'គោលដៅកំពុងសន្សំ',goalCompletedCount:'បានសម្រេច',goalSavedTotal:'ប្រាក់សន្សំសរុប · រូបិយប័ណ្ណដែលជ្រើស',goalQuickAmounts:'ចំនួនរហ័ស',emptyActiveGoals:'មិនមានគោលដៅកំពុងសន្សំទេ។ បង្កើតគោលដៅថ្មីសម្រាប់ផែនការបន្ទាប់។',emptyCompletedGoals:'គោលដៅដែលសម្រេចនឹងបង្ហាញនៅទីនេះ។',noHiddenGoals:'មិនមានគោលដៅលាក់ទេ។',showHiddenGoals:'បង្ហាញគោលដៅដែលលាក់',hideHiddenGoals:'លាក់គោលដៅដែលបានបង្ហាញ'});
+Object.assign(en,{confirmDeleteGoalTitle:'Delete this goal?',confirmDeleteGoalHelp:'This permanently deletes the goal and all of its savings history. This cannot be undone.',confirmDeleteGoal:'Delete permanently',cancel:'Cancel'});
+Object.assign(km,{confirmDeleteGoalTitle:'លុបគោលដៅនេះ?',confirmDeleteGoalHelp:'ការលុបនឹងលុបគោលដៅ និងប្រវត្តិសន្សំទាំងអស់ជាអចិន្ត្រៃយ៍។ មិនអាចស្ដារវិញបានទេ។',confirmDeleteGoal:'លុបជាអចិន្ត្រៃយ៍',cancel:'បោះបង់'});
 let goalsState=[],currentGoal=null,goalRequestId='',goalsVersion=0,toastTimer,showHiddenGoals=false;
 let appTheme='system';
 try{appTheme=localStorage.getItem('mymoney-theme')||'system';}catch{}
@@ -170,22 +174,38 @@ $('budgetForm').addEventListener('submit',async e=>{
 });
 $('export').addEventListener('click',async()=>{$('export').disabled=true;try{const blob=await api('/api/export',{blob:true});const url=URL.createObjectURL(blob);const a=node('a');a.href=url;a.download='mymoney.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){notify(e.message||t('exportFail'));}finally{$('export').disabled=false;}});
 $('language').onclick=toggleLanguage;$('switchLanguage').onclick=toggleLanguage;
-$('addExpense').onclick=()=>openEntry('expense');$('addIncome').onclick=()=>openEntry('income');$('closeDialog').onclick=()=>$('entryDialog').close();$('entryCurrency').onchange=precision;$('manageBudget').onclick=()=>showPage('budget');$('viewAll').onclick=()=>showPage('history');$('month').onchange=()=>{pageSize=20;load();};$('currency').onchange=()=>{pageSize=20;render();};function updateBudgetContext(){$('budgetContext').textContent=t('budgetContext')+' '+$('month').value+' · '+$('budgetCurrency').value;} $('month').addEventListener('change',updateBudgetContext);$('budgetCurrency').addEventListener('change',()=>{updateBudgetContext();render();});$('search').oninput=()=>{pageSize=20;renderHistory();};$('more').onclick=()=>{pageSize+=20;renderHistory();};document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;pageSize=20;document.querySelectorAll('[data-filter]').forEach(n=>n.classList.toggle('selected',n===b));renderHistory();});
+$('addExpense').onclick=()=>openEntry('expense');$('addIncome').onclick=()=>openEntry('income');$('closeDialog').onclick=()=>$('entryDialog').close();$('entryCurrency').onchange=precision;$('manageBudget').onclick=()=>showPage('budget');$('viewAll').onclick=()=>showPage('history');$('month').onchange=()=>{pageSize=20;load();};$('currency').onchange=()=>{pageSize=20;render();renderGoals();};function updateBudgetContext(){$('budgetContext').textContent=t('budgetContext')+' '+$('month').value+' · '+$('budgetCurrency').value;} $('month').addEventListener('change',updateBudgetContext);$('budgetCurrency').addEventListener('change',()=>{updateBudgetContext();render();});$('search').oninput=()=>{pageSize=20;renderHistory();};$('more').onclick=()=>{pageSize+=20;renderHistory();};document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;pageSize=20;document.querySelectorAll('[data-filter]').forEach(n=>n.classList.toggle('selected',n===b));renderHistory();});
 function renderGoals(){
-  const root=$('goalList');root.replaceChildren();
-  if(!goalsState.length){root.append(node('div',t('emptyGoals'),'empty'));return;}
-  for(const goal of goalsState){
-    const card=node('article',undefined,'card goal-card');
-    const top=node('div',undefined,'section-title');const title=node('button','🎯 '+goal.title,'goal-title-button');title.type='button';title.onclick=()=>openGoal(goal);top.append(title,node('span',goal.percent+'%','goal-percent'));if(goal.archived)top.append(node('span',t('goalHidden'),'goal-hidden-badge'));
+  const root=$('goalList'),overview=$('goalOverview');root.replaceChildren();overview.replaceChildren();
+  const visible=goalsState.filter(goal=>!goal.archived),active=visible.filter(goal=>goal.saved<goal.target);
+  const completed=visible.filter(goal=>goal.saved>=goal.target),hidden=goalsState.filter(goal=>goal.archived),currency=$('currency').value;
+  const savedTotal=visible.filter(goal=>goal.currency===currency).reduce((sum,goal)=>sum+goal.saved,0);
+  const stat=(label,value,icon)=>{const item=node('div',undefined,'goal-stat');item.append(node('span',icon,'goal-stat-icon'),node('small',label),node('strong',value));overview.append(item);};
+  stat(t('goalSavedTotal'),money(savedTotal,currency),'💰');stat(t('goalActiveCount'),String(active.length),'🎯');stat(t('goalCompletedCount'),String(completed.length),'✓');
+  const makeCard=goal=>{
+    const card=node('article',undefined,'card goal-card'+(goal.archived?' is-archived':''));
+    const top=node('div',undefined,'section-title');const title=node(goal.archived?'span':'button','🎯 '+goal.title,'goal-title-button');
+    if(!goal.archived){title.type='button';title.onclick=()=>openGoal(goal);}top.append(title,node('span',goal.percent+'%','goal-percent'));if(goal.archived)top.append(node('span',t('goalHidden'),'goal-hidden-badge'));
     const progress=node('progress');progress.max=goal.target;progress.value=Math.min(goal.saved,goal.target);progress.setAttribute('aria-label',goal.title);
-    card.append(top,node('strong',money(goal.saved,goal.currency)),node('p','/ '+money(goal.target,goal.currency),'muted'),progress,
-      node('p',t('goalRemaining')+': '+money(goal.remaining,goal.currency),'goal-remaining'));
-    if(goal.estimated_days){const estimateDate=new Date();estimateDate.setDate(estimateDate.getDate()+goal.estimated_days);card.append(node('small',t('goalEstimate')+': '+goal.estimated_days+' '+t('goalDays')+' · '+estimateDate.toLocaleDateString(),'muted'));}
-    if(goal.saved>=goal.target)card.append(node('p',t('goalComplete'),'positive'));
-    const actions=node('div',undefined,'goal-card-actions');const edit=node('button',t('editGoal'),'secondary');edit.type='button';edit.onclick=()=>openGoal(goal);actions.append(edit);if(!goal.archived){const manage=node('button',t('quickAddSavings'),'secondary');manage.type='button';manage.onclick=()=>openGoal(goal,true);actions.append(manage);}
-    if(goal.archived||goal.saved>=goal.target){const archive=node('button',t(goal.archived?'restoreGoal':'hideGoal'),'text-btn');archive.type='button';archive.onclick=()=>setGoalArchived(goal,!goal.archived,archive);actions.append(archive);const remove=node('button',t('removeGoal'),'danger goal-remove-button');remove.type='button';remove.onclick=()=>removeGoalPermanently(goal,remove);actions.append(remove);}
-    card.classList.toggle('is-archived',!!goal.archived);root.append(card);
-  }
+    card.append(top,node('strong',money(goal.saved,goal.currency)),node('p','/ '+money(goal.target,goal.currency),'muted'),progress,node('p',t('goalRemaining')+': '+money(goal.remaining,goal.currency),'goal-remaining'));
+    if(goal.estimated_days&&goal.saved<goal.target){const estimateDate=new Date();estimateDate.setDate(estimateDate.getDate()+goal.estimated_days);card.append(node('small',t('goalEstimate')+': '+goal.estimated_days+' '+t('goalDays')+' · '+estimateDate.toLocaleDateString(),'muted'));}
+    const done=goal.saved>=goal.target;if(done)card.append(node('p','✓ '+t('goalComplete'),'positive goal-complete-label'));
+    const actions=node('div',undefined,'goal-card-actions');
+    if(!goal.archived){const manage=node('button',t('quickAddSavings'),'primary');manage.type='button';manage.onclick=()=>openGoal(goal,true);actions.append(manage);const edit=node('button',t('editGoal'),'secondary');edit.type='button';edit.onclick=()=>openGoal(goal);actions.append(edit);}
+    if(done&&!goal.archived){const hide=node('button',t('hideGoal'),'secondary');hide.type='button';hide.onclick=()=>setGoalArchived(goal,true,hide);actions.append(hide);}
+    if(goal.archived){const restore=node('button',t('restoreGoal'),'secondary');restore.type='button';restore.onclick=()=>setGoalArchived(goal,false,restore);actions.append(restore);}
+    const remove=node('button',t('removeGoal'),'danger goal-remove-button');remove.type='button';remove.onclick=()=>removeGoalPermanently(goal,remove);actions.append(remove);
+    card.append(actions);return card;
+  };
+  const renderGroup=(parent,title,items,emptyText,extraClass='',showHeading=true)=>{const section=node('section',undefined,'goal-group '+extraClass);if(showHeading){const heading=node('div',undefined,'goal-group-heading');heading.append(node('h3',title),node('span',String(items.length),'goal-count'));section.append(heading);}if(items.length)items.forEach(goal=>section.append(makeCard(goal)));else section.append(node('p',emptyText,'goal-empty muted'));parent.append(section);};
+  renderGroup(root,t('goalActiveSection'),active,t('emptyActiveGoals'));
+  const completedDetails=node('details',undefined,'goal-foldout');const completedSummary=node('summary',undefined,'goal-foldout-summary');completedSummary.append(node('span',t('goalCompletedSection')),node('span',String(completed.length),'goal-count'));completedDetails.append(completedSummary);renderGroup(completedDetails,t('goalCompletedSection'),completed,t('emptyCompletedGoals'),'completed-goal-group',false);root.append(completedDetails);
+  if(showHiddenGoals){const hiddenDetails=node('details',undefined,'goal-foldout hidden-goals-foldout');hiddenDetails.open=true;const hiddenSummary=node('summary',undefined,'goal-foldout-summary');hiddenSummary.append(node('span',t('goalHiddenSection')),node('span',String(hidden.length),'goal-count'));hiddenDetails.append(hiddenSummary);renderGroup(hiddenDetails,t('goalHiddenSection'),hidden,t('noHiddenGoals'),'hidden-goal-group',false);root.append(hiddenDetails);}
+}
+function renderGoalQuickAmounts(){
+  const root=$('goalQuickAmounts');if(!root)return;root.replaceChildren();
+  const currency=$('goalCurrency').value;const values=currency==='USD'?[1,5,10]:[5000,10000,20000];
+  for(const value of values){const button=node('button',(currency==='USD'?'$':'៛')+new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(value),'goal-quick-amount');button.type='button';button.onclick=()=>{$('goalEntryAmount').value=String(value);$('goalEntryAmount').focus();};root.append(button);}
 }
 async function loadGoals(){
   const version=++goalsVersion;$('goalsError').textContent=t('loading');
@@ -194,7 +214,8 @@ async function loadGoals(){
   $('toggleHiddenGoals').textContent=t(showHiddenGoals?'hideHiddenGoals':'showHiddenGoals');
 }
 async function setGoalArchived(goal,archived,button){busy(button,true);try{await api('/api/goals/'+goal.id+'/archive',{method:'POST',body:JSON.stringify({archived})});toast(t(archived?'goalHiddenDone':'goalRestoredDone'));await loadGoals();}catch(error){$('goalsError').textContent=error.message;}finally{busy(button,false);}}
-async function removeGoalPermanently(goal,button){if(!confirm(t('confirmGoalDelete')))return;busy(button,true);try{await api('/api/goals/'+goal.id,{method:'DELETE'});toast(t('deleted'));await loadGoals();}catch(error){$('goalsError').textContent=error.message;}finally{busy(button,false);}}
+function confirmGoalRemoval(){return new Promise(resolve=>{const dialog=$('confirmGoalDeleteDialog'),finish=value=>{dialog.close();$('confirmGoalDelete').onclick=null;$('cancelGoalDelete').onclick=null;resolve(value);};$('confirmGoalDelete').onclick=()=>finish(true);$('cancelGoalDelete').onclick=()=>finish(false);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);},{once:true});dialog.showModal();});}
+async function removeGoalPermanently(goal,button){if(!await confirmGoalRemoval())return;busy(button,true);try{await api('/api/goals/'+goal.id,{method:'DELETE'});if(currentGoal?.id===goal.id&&$('goalDialog').open)$('goalDialog').close();toast(t('deleted'));await loadGoals();}catch(error){$('goalsError').textContent=error.message;}finally{busy(button,false);}}
 $('toggleHiddenGoals').onclick=()=>{showHiddenGoals=!showHiddenGoals;loadGoals();};
 function goalPrecision(){const step=$('goalCurrency').value==='USD'?'0.01':'1';$('goalTarget').step=step;$('goalTarget').min=step;$('goalSaved').step=step;}
 function updateGoalTracking(goal){
@@ -216,7 +237,7 @@ async function loadGoalEntries(goal){
 function openGoal(goal=null,focusSavings=false){
   if(!state.user){notify(tg?.initData?'Please refresh and request access first.':t('openTelegram'));return;}
   currentGoal=goal;goalRequestId=crypto.randomUUID();$('goalForm').reset();$('goalForm').classList.toggle('quick-saving-mode',!!(goal&&focusSavings));$('goalError').textContent='';
-  $('goalName').value=goal?.title||'';$('goalCurrency').value=goal?.currency||$('currency').value;$('goalCurrency').disabled=!!goal;goalPrecision();
+  $('goalName').value=goal?.title||'';$('goalCurrency').value=goal?.currency||$('currency').value;$('goalCurrency').disabled=!!goal;goalPrecision();renderGoalQuickAmounts();
   const scale=$('goalCurrency').value==='USD'?100:1;
   $('goalEntryAmount').step=$('goalCurrency').value==='USD'?'0.01':'1';$('goalEntryAmount').min=$('goalEntryAmount').step;
   $('goalTarget').value=goal?goal.target/scale:'';$('goalSaved').value=goal?goal.saved/scale:0;$('deleteGoal').hidden=!goal;
@@ -224,7 +245,7 @@ function openGoal(goal=null,focusSavings=false){
   if(goal){updateGoalTracking(goal);loadGoalEntries(goal);}
   $('goalDialog').showModal();if(goal&&focusSavings)setTimeout(()=>$('goalEntryAmount').focus(),80);
 }
-$('newGoal').onclick=()=>openGoal();$('closeGoal').onclick=()=>$('goalDialog').close();$('goalCurrency').onchange=goalPrecision;$('refreshGoals').onclick=loadGoals;
+$('newGoal').onclick=()=>openGoal();$('closeGoal').onclick=()=>$('goalDialog').close();$('goalCurrency').onchange=()=>{goalPrecision();renderGoalQuickAmounts();};$('refreshGoals').onclick=loadGoals;
 $('addGoalMoney').onclick=()=>submitGoalMoney('add');$('withdrawGoalMoney').onclick=()=>submitGoalMoney('withdraw');
 async function submitGoalMoney(direction){
   if(!currentGoal)return;const button=direction==='add'?$('addGoalMoney'):$('withdrawGoalMoney'),other=direction==='add'?$('withdrawGoalMoney'):$('addGoalMoney');busy(button,true);other.disabled=true;$('goalEntryStatus').textContent='';
@@ -242,7 +263,7 @@ $('goalForm').onsubmit=async e=>{
   finally{busy($('saveGoal'),false);$('deleteGoal').disabled=false;}
 };
 $('deleteGoal').onclick=async()=>{
-  if(!currentGoal||!confirm(t('confirmGoalDelete')))return;
+  if(!currentGoal||!await confirmGoalRemoval())return;
   busy($('deleteGoal'),true);$('saveGoal').disabled=true;
   try{await api('/api/goals/'+currentGoal.id,{method:'DELETE'});$('goalDialog').close();await loadGoals();toast(t('deleted'));}
   catch(e){$('goalError').textContent=e.message;}
