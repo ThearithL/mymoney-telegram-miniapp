@@ -7,6 +7,10 @@ import pytest
 from app import create_app
 
 TOKEN = '123456:test-token'
+ADMIN_TEST_PASSWORD = 'TestAdminPassword-2026!'
+
+def unlock_admin(client,uid=123,password=ADMIN_TEST_PASSWORD):
+    return client.post('/api/admin/unlock',headers=headers(uid=uid),json={'password':password})
 
 def headers(uid=123, age=0, tamper=False):
     data = {'auth_date': str(int(time.time())-age), 'user': json.dumps({'id': uid, 'first_name': 'Test'})}
@@ -49,6 +53,22 @@ def test_crud_idempotency_and_ownership(client):
     assert client.get('/api/data?month=2026-01',headers=headers()).json['transactions'][0]['amount']==2000
     assert client.delete(f'/api/transactions/{identity}',headers=headers()).status_code==200
     assert not client.get('/api/data?month=2026-01',headers=headers()).json['transactions']
+
+def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch):
+    # The runtime dependency is installed from requirements.txt in deployment.
+    # Stub its encoder here so this test remains offline-friendly.
+    import sys,types
+    from PIL import Image
+    monkeypatch.setitem(sys.modules,'qrcode',types.SimpleNamespace(make=lambda _payload:Image.new('RGB',(21,21),'black')))
+    created=client.post('/api/transactions',json=payload(),headers=headers())
+    identity=created.json['id']
+    assert client.get(f'/api/transactions/{identity}/qr').status_code==401
+    assert client.get(f'/api/transactions/{identity}/qr',headers=headers(uid=456)).status_code==404
+    response=client.get(f'/api/transactions/{identity}/qr',headers=headers())
+    assert response.status_code==200
+    assert response.mimetype=='image/png'
+    assert response.data.startswith(b'\x89PNG\r\n\x1a\n')
+    assert response.headers['Cache-Control']=='no-store'
 
 @pytest.mark.parametrize('amount,currency', [('0','USD'),('-1','KHR'),('1.001','USD'),('1.1','KHR'),('NaN','USD'),('Infinity','USD'),('100','EUR')])
 def test_rejects_invalid_money(client,amount,currency):
@@ -121,6 +141,7 @@ def test_owner_can_add_and_remove_admin_in_mini_app(access_client):
     assert added.json['user_id']==456
     assert client.get('/api/admin/users',headers=headers()).json['users'][0]['status']=='admin'
     assert client.get('/api/admin/users/456',headers=headers()).status_code==200
+    assert unlock_admin(client,456).status_code==200
     assert client.get('/api/admin/users',headers=headers(uid=456)).status_code==200
     # A promoted admin must see the bot menu entry and be directed to the Mini App console.
     calls.clear()
@@ -181,6 +202,7 @@ def test_admin_dashboard_and_owner_transaction_crud_and_messaging(access_client)
     assert history.status_code==200 and history.json['messages'][0]['text']=='Hello from MyMoney admin'
     assert client.post('/api/admin/users/456/message',headers=headers(),json={'text':' '}).status_code==400
     assert client.post('/api/admin/admins',headers=headers(),json={'user_id':456,'confirm':True}).status_code==201
+    assert unlock_admin(client,456).status_code==200
     assert client.post('/api/admin/users/456/message',headers=headers(uid=456),json={'text':'Not owner'}).status_code==403
     assert client.delete(f'/api/admin/users/456/transactions/{identity}',headers=headers(uid=456)).status_code==403
 
@@ -199,10 +221,16 @@ def test_owner_can_create_filter_and_permanently_remove_user_with_exact_id_confi
     assert client.delete('/api/admin/users/123',headers=headers(),json={'confirm_id':'123'}).status_code==400
     assert client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'789'}).json=={
         'ok':True,'deleted_user_id':789}
-    removed_detail=client.get('/api/admin/users/789',headers=headers()).json
-    assert removed_detail['user']['status']=='deleted' and removed_detail['transactions']==[]
+    assert client.get('/api/admin/users/789',headers=headers()).status_code==404
     assert client.get('/api/admin/users/789/messages',headers=headers()).status_code==404
     assert client.get('/api/data',headers=headers(uid=789)).status_code==403
+    from app import registered_users, access_requests, transactions, deleted_users, admin_audit, select
+    with client.application.extensions['engine'].connect() as conn:
+        assert conn.execute(select(registered_users.c.user_id).where(registered_users.c.user_id==789)).first() is None
+        assert conn.execute(select(access_requests.c.user_id).where(access_requests.c.user_id==789)).first() is None
+        assert conn.execute(select(transactions.c.id).where(transactions.c.user_id==789)).first() is None
+        assert conn.execute(select(deleted_users.c.user_hash)).first() is not None
+        assert conn.execute(select(admin_audit.c.target_id).where(admin_audit.c.target_id==789)).first() is None
     assert client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'789'}).status_code==404
     assert message(client,789,'/request').status_code==200 and 'account was removed' in calls[-1][1]['text']
     # An additional admin can view users but cannot create or delete them.
@@ -211,12 +239,44 @@ def test_owner_can_create_filter_and_permanently_remove_user_with_exact_id_confi
     assert client.delete('/api/admin/users/456',headers=headers(uid=456),json={'confirm_id':'456'}).status_code==403
 
 def test_deleted_user_stays_blocked_even_if_legacy_allowlisted(tmp_path):
+    from werkzeug.security import generate_password_hash
     client=create_app({'TESTING':True,'BOT_TOKEN':TOKEN,'ADMIN_USER_ID':'123','ALLOWED_USER_IDS':'789',
+        'ADMIN_PASSWORD_HASH':generate_password_hash(ADMIN_TEST_PASSWORD),
         'DATABASE_URL':'sqlite:///'+str(tmp_path/'deleted-allowlist.db')}).test_client()
+    assert unlock_admin(client).status_code==200
     assert client.get('/api/data',headers=headers(uid=789)).status_code==200
     removed=client.delete('/api/admin/users/789',headers=headers(),json={'confirm_id':'789'})
     assert removed.status_code==200
     assert client.get('/api/data',headers=headers(uid=789)).status_code==403
+
+def test_admin_dashboard_requires_password_and_can_be_locked(access_client):
+    client,_,_=access_client
+    assert client.get('/api/admin/overview',headers=headers()).status_code==200
+    assert client.post('/api/admin/lock',headers=headers()).status_code==200
+    assert client.get('/api/admin/overview',headers=headers()).status_code==401
+    assert client.post('/api/admin/unlock',headers=headers(),json={'password':'wrong'}).status_code==401
+    assert client.post('/api/admin/unlock',headers=headers(),json={'password':ADMIN_TEST_PASSWORD}).status_code==200
+    assert client.get('/api/admin/overview',headers=headers()).status_code==200
+
+def test_admin_password_lockout_after_five_failures(access_client):
+    client,_,_=access_client
+    assert client.post('/api/admin/lock',headers=headers()).status_code==200
+    for _ in range(4):
+        assert client.post('/api/admin/unlock',headers=headers(),json={'password':'incorrect'}).status_code==401
+    assert client.post('/api/admin/unlock',headers=headers(),json={'password':'incorrect'}).status_code==429
+    assert client.post('/api/admin/unlock',headers=headers(),json={'password':ADMIN_TEST_PASSWORD}).status_code==429
+
+def test_admin_can_add_pending_user_by_seen_telegram_username(access_client):
+    client,_,_=access_client
+    from app import access_requests, registered_users, insert
+    with client.application.extensions['engine'].begin() as conn:
+        conn.execute(insert(registered_users).values(user_id=987654,name='Tester',username='testuser',last_seen=1))
+        conn.execute(insert(access_requests).values(user_id=987654,name='Tester',username='testuser',
+            status='pending',request_key='pending-testuser',notified_at=0))
+    created=client.post('/api/admin/users',headers=headers(),json={'user_id':'@TestUser','name':'Test account'})
+    assert created.status_code==201 and created.json['user_id']==987654
+    missing=client.post('/api/admin/users',headers=headers(),json={'user_id':'@unknownuser'})
+    assert missing.status_code==404 and 'send /start or /request' in missing.json['error']
 
 def test_recent_activity_button_and_command_are_private_and_show_latest_five(access_client):
     client,calls,_=access_client
@@ -307,9 +367,13 @@ def access_client(tmp_path, monkeypatch):
         calls.append((url.rsplit('/',1)[-1], json))
         return Result()
     monkeypatch.setattr('app.requests.post', post)
+    from werkzeug.security import generate_password_hash
     config = {'TESTING': True, 'BOT_TOKEN': TOKEN, 'ALLOWED_USER_IDS': '', 'ADMIN_USER_ID': '123',
+        'ADMIN_PASSWORD_HASH': generate_password_hash(ADMIN_TEST_PASSWORD),
         'DATABASE_URL': 'sqlite:///'+str(tmp_path/'access.db'), 'WEBHOOK_SECRET': 'secret', 'APP_URL':'https://example.com'}
-    return create_app(config).test_client(), calls, config
+    client=create_app(config).test_client()
+    assert unlock_admin(client).status_code==200
+    return client, calls, config
 
 def message(client, uid, text):
     return client.post('/telegram/webhook', headers={'X-Telegram-Bot-Api-Secret-Token':'secret'},

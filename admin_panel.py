@@ -210,7 +210,8 @@ class AdminPanel:
         text = '🕘 Admin decisions · Phnom Penh time\n'
         for r in rows[:10]:
             stamp = datetime.fromtimestamp(r['at'],ZoneInfo('Asia/Phnom_Penh')).strftime('%Y-%m-%d %H:%M')
-            text += f"\n{stamp} · {r['action']} · User {r['target_id']}"
+            target = 'Removed account' if r['target_id'] == 0 else f"User {r['target_id']}"
+            text += f"\n{stamp} · {r['action']} · {target}"
         if not rows:
             text += 'No decisions yet.'
         pager=[]

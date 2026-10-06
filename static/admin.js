@@ -2,6 +2,22 @@
 let adminSelectedUser = null;
 let adminOverview = null;
 let adminUsersCache = [];
+let adminLockTimer=null;
+let adminUnlockDeadline=0;
+
+function clearAdminView(){
+  if(adminLockTimer)clearTimeout(adminLockTimer);adminLockTimer=null;adminUnlockDeadline=0;adminSelectedUser=null;adminOverview=null;adminUsersCache=[];
+  for(const id of ['adminMetrics','adminChartLegend','adminStatusBreakdown','adminUsers','adminUserDetail','adminList'])$(id)?.replaceChildren();
+  $('adminUserDetail').hidden=true;
+}
+function displayAdminLocked(message=''){
+  clearAdminView();$('adminWorkspace').hidden=true;$('adminUnlockCard').hidden=false;
+  $('adminPassword').value='';$('adminUnlockStatus').textContent=message;
+}
+async function autoLockAdmin(){
+  displayAdminLocked('Admin locked automatically. Enter your password again. / Admin បានចាក់សោ។ សូមបញ្ចូលពាក្យសម្ងាត់ម្ដងទៀត។');
+  try{await api('/api/admin/lock',{method:'POST'});}catch{}
+}
 
 async function loadAdminOverview(){
   try{
@@ -38,11 +54,24 @@ function renderAdminDonut(){
 
 async function loadAdminConsole(){
   const status=$('adminStatus');
-  status.textContent='Loading admin data… / កំពុងទាញទិន្នន័យ Admin…';
-  $('adminUsers').replaceChildren();
-  $('adminUserDetail').hidden=true;
+  clearAdminView();
   $('adminOwnerTools').hidden=!state.user?.is_owner;
   $('adminAddUserCard').hidden=!state.user?.is_owner;
+  $('adminUnlockStatus').textContent='';
+  $('adminUnlockCard').hidden=true;$('adminWorkspace').hidden=true;
+  let security;
+  try{
+    security=await api('/api/admin/security');
+    if(!security.password_configured){$('adminUnlockCard').hidden=false;$('adminPassword').disabled=true;$('adminUnlockButton').disabled=true;
+      $('adminPasswordHelp').textContent='Set ADMIN_PASSWORD_HASH in Render Environment to enable Admin password protection. / កំណត់ ADMIN_PASSWORD_HASH ក្នុង Render ជាមុន។';return;}
+    $('adminPassword').disabled=false;$('adminUnlockButton').disabled=false;
+    if(!security.unlocked){displayAdminLocked();$('adminPasswordHelp').textContent='Enter the Admin password. It locks automatically after 15 minutes. / បញ្ចូលពាក្យសម្ងាត់ Admin។ វាចាក់សោស្វ័យប្រវត្តិក្រោយ ១៥ នាទី។';return;}
+  }catch(error){$('adminUnlockCard').hidden=false;$('adminUnlockStatus').textContent=error.message;return;}
+  if(adminLockTimer)clearTimeout(adminLockTimer);
+  adminUnlockDeadline=Date.now()+Math.max(1,security.expires_in)*1000;
+  adminLockTimer=setTimeout(autoLockAdmin,Math.max(1,security.expires_in)*1000);
+  $('adminWorkspace').hidden=false;
+  status.textContent='Loading admin data… / កំពុងទាញទិន្នន័យ Admin…';
   await loadAdminOverview();
   try{
     const result=await api('/api/admin/users');
@@ -53,15 +82,29 @@ async function loadAdminConsole(){
   }catch(error){status.textContent=error.message;}
 }
 
+$('adminUnlockForm').onsubmit=async event=>{
+  event.preventDefault();const button=$('adminUnlockButton'),status=$('adminUnlockStatus');button.disabled=true;status.textContent='Checking…';
+  try{await api('/api/admin/unlock',{method:'POST',body:JSON.stringify({password:$('adminPassword').value})});$('adminPassword').value='';toast('Admin unlocked / បានដោះសោ Admin');await loadAdminConsole();}
+  catch(error){status.textContent=error.message;}
+  finally{button.disabled=false;}
+};
+$('adminWorkspace').addEventListener('click',event=>{
+  if(event.target.closest('button') && Date.now()>=adminUnlockDeadline)autoLockAdmin();
+});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&adminUnlockDeadline&&Date.now()>=adminUnlockDeadline)autoLockAdmin();
+});
+$('adminLockButton').onclick=async()=>{try{await api('/api/admin/lock',{method:'POST'});displayAdminLocked();toast('Admin locked / បានចាក់សោ Admin');await loadAdminConsole();}catch(error){$('adminStatus').textContent=error.message;}};
+
 function renderAdminUserList(){
     const list=$('adminUsers');list.replaceChildren();
     const query=$('adminUserSearch').value.trim().toLowerCase(),status=$('adminUserStatusFilter').value;
-    const users=adminUsersCache.filter(user=>(status?user.status===status:user.status!=='deleted')&&(!query||`${user.name} ${user.id}`.toLowerCase().includes(query)));
+    const users=adminUsersCache.filter(user=>(status?user.status===status:user.status!=='deleted')&&(!query||`${user.name} ${user.id} ${user.username||''}`.toLowerCase().includes(query)));
     if(!users.length){list.append(node('p','No users match these filters. / រកមិនឃើញអ្នកប្រើតាមលក្ខខណ្ឌនេះទេ។','muted'));return;}
     for(const user of users){
       const row=node('div',undefined,'admin-user-row');
       const summary=node('div',undefined,'admin-user-copy');
-      summary.append(node('strong',`${user.name} · ${user.id}`),node('small',`${user.status} · ${user.transaction_count} records`));
+      summary.append(node('strong',`${user.name} · ${user.id}`),node('small',`${user.username?'@'+user.username+' · ':''}${user.status} · ${user.transaction_count} records`));
       const view=node('button','View / មើល','secondary');view.type='button';view.onclick=()=>loadAdminUser(user.id);
       row.append(summary,view);
       if(state.user?.is_owner&&!['admin','deleted'].includes(user.status)){const remove=node('button','Delete / លុប','text-btn');remove.type='button';remove.onclick=()=>deleteAdminUser(user.id,user.name);row.append(remove);}
@@ -215,22 +258,23 @@ async function appendAdminMessages(panel,userId){
 }
 
 $('openAdminConsole').onclick=()=>{showPage('admin');loadAdminConsole();};
-$('toggleAdminMode').onclick=()=>{
+$('toggleAdminMode').onclick=async()=>{
   if(!state.user?.is_admin)return;
   const next=getAdminMode()==='admin'?'user':'admin';
+  if(next==='user'){try{await api('/api/admin/lock',{method:'POST'});}catch{}displayAdminLocked();}
   adminModeOverride=next;
   try{localStorage.setItem('mymoney-admin-mode-'+state.user.id,next);}catch{}
   syncAdminModeUI();
   toast(t(next==='admin'?'adminModeEnabled':'userModeEnabled'));
 };
-$('adminBack').onclick=()=>showPage('settings');
+$('adminBack').onclick=async()=>{try{await api('/api/admin/lock',{method:'POST'});}catch{}displayAdminLocked();showPage('settings');};
 $('refreshAdmin').onclick=loadAdminConsole;
 $('adminUserSearch').oninput=renderAdminUserList;
 $('adminUserStatusFilter').onchange=renderAdminUserList;
 $('adminAddUserForm').onsubmit=async event=>{
   event.preventDefault();const status=$('adminAddUserStatus'),button=event.submitter||$('adminAddUserForm').querySelector('button');
-  const userId=Number($('adminNewUserId').value),name=$('adminNewUserName').value;
-  if(!Number.isSafeInteger(userId)||userId<=0){status.textContent='Enter a valid Telegram ID.';return;}
+  const userId=$('adminNewUserId').value.trim(),name=$('adminNewUserName').value;
+  if(!userId){status.textContent='Enter a Telegram ID or @username.';return;}
   if(!confirm(`Create and approve MyMoney access for Telegram user ${userId}?`))return;
   button.disabled=true;status.textContent='Creating user…';
   try{const result=await api('/api/admin/users',{method:'POST',body:JSON.stringify({user_id:userId,name})});status.textContent=result.notification_sent?'User created, approved and notified.':'User created and approved. They need to start the bot before Telegram can message them.';$('adminAddUserForm').reset();await loadAdminConsole();}

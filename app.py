@@ -14,7 +14,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, abort, g, jsonify, request, send_from_directory, Response
+from flask import Flask, abort, g, jsonify, request, send_from_directory, Response, session
+from werkzeug.security import check_password_hash
 from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInteger,
                         String, Text, Date, UniqueConstraint, select, insert, update, delete, func, text, inspect, union)
 from sqlalchemy.exc import IntegrityError
@@ -46,13 +47,14 @@ spending_budgets = Table('spending_type_budgets', metadata,
 access_requests = Table('access_requests', metadata,
     Column('user_id', BigInteger, primary_key=True),
     Column('name', String(200), nullable=False),
+    Column('username', String(32)),
     Column('status', String(20), nullable=False),
     Column('request_key', String(32), nullable=False, unique=True),
     Column('notified_at', BigInteger, nullable=False, default=0))
 
 registered_users = Table('registered_users', metadata,
     Column('user_id', BigInteger, primary_key=True), Column('name', String(200), nullable=False),
-    Column('last_seen', BigInteger, nullable=False), Column('admin_label', String(80)))
+    Column('last_seen', BigInteger, nullable=False), Column('admin_label', String(80)), Column('username', String(32)))
 admin_actions = Table('admin_actions', metadata,
     Column('key', String(32), primary_key=True), Column('target_id', BigInteger, nullable=False),
     Column('action', String(20), nullable=False), Column('expires_at', BigInteger, nullable=False))
@@ -67,6 +69,11 @@ admin_messages = Table('admin_messages', metadata,
 app_admins = Table('app_admins', metadata,
     Column('user_id', BigInteger, primary_key=True), Column('granted_by', BigInteger, nullable=False),
     Column('created_at', BigInteger, nullable=False))
+deleted_users = Table('deleted_user_tombstones', metadata,
+    Column('user_hash', String(64), primary_key=True), Column('deleted_at', BigInteger, nullable=False))
+admin_login_attempts = Table('admin_login_attempts', metadata,
+    Column('user_id', BigInteger, primary_key=True), Column('failures', Integer, nullable=False),
+    Column('window_started_at', BigInteger, nullable=False), Column('locked_until', BigInteger, nullable=False))
 
 savings_goals = Table('savings_goals', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False, index=True),
@@ -142,14 +149,40 @@ def create_app(config=None):
                       WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET', ''),
                       ALLOWED_USER_IDS=os.getenv('ALLOWED_USER_IDS', ''),
                       ADMIN_USER_ID=os.getenv('ADMIN_USER_ID', ''),
+                      ADMIN_PASSWORD_HASH=os.getenv('ADMIN_PASSWORD_HASH', ''),
+                      FLASK_SECRET_KEY=os.getenv('FLASK_SECRET_KEY', ''),
                       DATABASE_URL=os.getenv('DATABASE_URL', 'sqlite:///money.db'), MAX_CONTENT_LENGTH=3*1024*1024)
     if config:
         app.config.update(config)
+    signing_key = app.config['FLASK_SECRET_KEY'] or hmac.new(
+        app.config['BOT_TOKEN'].encode(), b'mymoney-admin-session', hashlib.sha256).hexdigest()
+    app.secret_key = signing_key
+    secure_cookie = app.config.get('SESSION_COOKIE_SECURE')
+    if secure_cookie is None:
+        secure_cookie = not app.config.get('TESTING', False)
+    app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Strict',
+        SESSION_COOKIE_SECURE=secure_cookie,
+        PERMANENT_SESSION_LIFETIME=timedelta(minutes=15))
     url = app.config['DATABASE_URL']
     if url.startswith(('postgres://', 'postgresql://')):
         url = 'postgresql+psycopg://' + url.split('://', 1)[1]
     engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)
+    def deleted_user_hash(uid):
+        return hmac.new(app.secret_key.encode(), f'deleted-user:{uid}'.encode(), hashlib.sha256).hexdigest()
+    # Upgrade old deletion markers to non-reversible tombstones, then erase their
+    # plain Telegram IDs from the normal user/access tables.
+    with engine.begin() as conn:
+        old_deleted = conn.execute(select(access_requests.c.user_id, access_requests.c.status)
+            .where(access_requests.c.status == 'deleted')).all()
+        for old in old_deleted:
+            if engine.dialect.name == 'postgresql':
+                from sqlalchemy.dialects.postgresql import insert as tombstone_upsert
+            else:
+                from sqlalchemy.dialects.sqlite import insert as tombstone_upsert
+            conn.execute(tombstone_upsert(deleted_users).values(user_hash=deleted_user_hash(old.user_id),
+                deleted_at=int(time.time())).on_conflict_do_nothing(index_elements=['user_hash']))
+            conn.execute(delete(access_requests).where(access_requests.c.user_id == old.user_id))
     # Safe additive migration for existing databases created before spending classification.
     if 'spending_type' not in {column['name'] for column in inspect(engine).get_columns('transactions')}:
         with engine.begin() as conn:
@@ -157,6 +190,12 @@ def create_app(config=None):
     if 'admin_label' not in {column['name'] for column in inspect(engine).get_columns('registered_users')}:
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE registered_users ADD COLUMN admin_label VARCHAR(80)'))
+    if 'username' not in {column['name'] for column in inspect(engine).get_columns('registered_users')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE registered_users ADD COLUMN username VARCHAR(32)'))
+    if 'username' not in {column['name'] for column in inspect(engine).get_columns('access_requests')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE access_requests ADD COLUMN username VARCHAR(32)'))
     app.extensions['engine'] = engine
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
@@ -172,18 +211,25 @@ def create_app(config=None):
         uid = user.get('id')
         if type(uid) is not int or uid <= 0:
             return
+        with engine.connect() as conn:
+            if conn.execute(select(deleted_users.c.user_hash).where(
+                    deleted_users.c.user_hash == deleted_user_hash(uid))).first():
+                return
         if engine.dialect.name == 'postgresql':
             from sqlalchemy.dialects.postgresql import insert as upsert
         else:
             from sqlalchemy.dialects.sqlite import insert as upsert
-        values = {'user_id': uid, 'name': str(user.get('first_name', 'User'))[:200], 'last_seen': int(time.time())}
+        username = user.get('username')
+        username = str(username).lstrip('@')[:32] if isinstance(username, str) and username.strip() else None
+        values = {'user_id': uid, 'name': str(user.get('first_name', 'User'))[:200],
+                  'last_seen': int(time.time()), 'username': username}
         stmt = upsert(registered_users).values(**values)
         with engine.begin() as conn:
             if conn.execute(select(access_requests.c.status).where(
                     access_requests.c.user_id == uid)).scalar_one_or_none() == 'deleted':
                 return
             conn.execute(stmt.on_conflict_do_update(index_elements=['user_id'], set_={
-                'name': values['name'], 'last_seen': values['last_seen']}))
+                'name': values['name'], 'last_seen': values['last_seen'], 'username': values['username']}))
 
     for uid in allowed | ({admin} if admin else set()):
         # Seed configured IDs without overwriting a previously known display name.
@@ -193,6 +239,10 @@ def create_app(config=None):
             remember_user({'id': uid})
 
     def has_access(uid):
+        with engine.connect() as conn:
+            if conn.execute(select(deleted_users.c.user_hash).where(
+                    deleted_users.c.user_hash == deleted_user_hash(uid))).first():
+                return False
         if is_admin_user(uid):
             return True
         with engine.connect() as conn:
@@ -350,17 +400,23 @@ def create_app(config=None):
         uid = user['id']
         if has_access(uid):
             return '✅ អ្នកមានសិទ្ធិរួចហើយ / Already allowed. Send /start.'
+        with engine.connect() as conn:
+            if conn.execute(select(deleted_users.c.user_hash).where(
+                    deleted_users.c.user_hash == deleted_user_hash(uid))).first():
+                return '🔒 This account was removed. Contact the owner to be added again.'
         if not admin:
             return '⚙️ Admin not configured. Send /id and contact the owner.'
         name = str(user.get('first_name', 'User'))[:200]
+        username = user.get('username')
+        username = str(username).lstrip('@')[:32] if isinstance(username, str) and username.strip() else None
         if engine.dialect.name == 'postgresql':
             from sqlalchemy.dialects.postgresql import insert as upsert
         else:
             from sqlalchemy.dialects.sqlite import insert as upsert
         with engine.begin() as conn:
             conn.execute(upsert(access_requests).values(user_id=uid, name=name,
-                status='pending', request_key=uuid.uuid4().hex, notified_at=0
-                ).on_conflict_do_nothing(index_elements=['user_id']))
+                username=username, status='pending', request_key=uuid.uuid4().hex, notified_at=0
+                ).on_conflict_do_update(index_elements=['user_id'], set_={'name': name, 'username': username}))
             row = conn.execute(select(access_requests).where(access_requests.c.user_id == uid)).mappings().one()
             if row['status'] == 'deleted':
                 return '🔒 This account was removed. Contact the owner to be added again.'
@@ -400,6 +456,7 @@ def create_app(config=None):
     @app.errorhandler(403)
     @app.errorhandler(404)
     @app.errorhandler(409)
+    @app.errorhandler(429)
     @app.errorhandler(413)
     @app.errorhandler(503)
     def error(e):
@@ -491,10 +548,87 @@ def create_app(config=None):
     def require_admin():
         if not is_admin_user(g.user['id']):
             abort(403, 'Admin only.')
+        if session.get('admin_user_id') != g.user['id'] or int(session.get('admin_unlock_expires', 0)) <= int(time.time()):
+            session.pop('admin_user_id', None)
+            session.pop('admin_unlock_expires', None)
+            abort(401, 'Admin password required. Unlock the Admin dashboard first.')
 
     def require_owner():
+        require_admin()
         if not admin or g.user['id'] != admin:
             abort(403, 'Only the owner can add or remove admins.')
+
+    @app.get('/api/admin/security')
+    @auth
+    def admin_security_status():
+        if not is_admin_user(g.user['id']):
+            abort(403, 'Admin only.')
+        unlocked = session.get('admin_user_id') == g.user['id'] and int(
+            session.get('admin_unlock_expires', 0)) > int(time.time())
+        expires_in = max(0, int(session.get('admin_unlock_expires', 0)) - int(time.time())) if unlocked else 0
+        return {'password_configured': bool(app.config['ADMIN_PASSWORD_HASH']), 'unlocked': unlocked,
+                'expires_in': expires_in}
+
+    @app.post('/api/admin/unlock')
+    @auth
+    def admin_unlock():
+        uid = g.user['id']
+        if not is_admin_user(uid):
+            abort(403, 'Admin only.')
+        password_hash = app.config['ADMIN_PASSWORD_HASH']
+        if not password_hash:
+            abort(503, 'Set ADMIN_PASSWORD_HASH in Render Environment before using Admin mode.')
+        password = json_body().get('password')
+        if not isinstance(password, str) or not 1 <= len(password) <= 256:
+            abort(400, 'Enter your Admin password.')
+        now = int(time.time()); locked = False; valid = False
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as login_upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as login_upsert
+        with engine.begin() as conn:
+            conn.execute(login_upsert(admin_login_attempts).values(user_id=uid, failures=0,
+                window_started_at=now, locked_until=0).on_conflict_do_nothing(index_elements=['user_id']))
+            attempt = conn.execute(select(admin_login_attempts).where(
+                admin_login_attempts.c.user_id == uid).with_for_update()).mappings().one()
+            if attempt['locked_until'] > now:
+                locked = True
+            else:
+                window_start = attempt['window_started_at']; failures = attempt['failures']
+                if now - window_start >= 900:
+                    window_start, failures = now, 0
+                try:
+                    valid = check_password_hash(password_hash, password)
+                except (ValueError, TypeError):
+                    valid = False
+                if valid:
+                    conn.execute(update(admin_login_attempts).where(
+                        admin_login_attempts.c.user_id == uid).values(failures=0,
+                            window_started_at=now, locked_until=0))
+                else:
+                    failures += 1
+                    locked_until = now + 900 if failures >= 5 else 0
+                    conn.execute(update(admin_login_attempts).where(
+                        admin_login_attempts.c.user_id == uid).values(failures=failures,
+                            window_started_at=window_start, locked_until=locked_until))
+                    locked = failures >= 5
+        if locked:
+            abort(429, 'Too many attempts. Wait 15 minutes before trying again.')
+        if not valid:
+            abort(401, 'Incorrect Admin password.')
+        session.clear()
+        session['admin_user_id'] = uid
+        session['admin_unlock_expires'] = now + 900
+        session.permanent = True
+        return {'ok': True, 'expires_in': 900}
+
+    @app.post('/api/admin/lock')
+    @auth
+    def admin_lock():
+        if not is_admin_user(g.user['id']):
+            abort(403, 'Admin only.')
+        session.clear()
+        return {'ok': True}
 
     def require_known_user(target_id):
         known = union(select(registered_users.c.user_id), select(access_requests.c.user_id),
@@ -508,26 +642,62 @@ def create_app(config=None):
                     access_requests.c.status == 'deleted')).first():
                 abort(404, 'User account has been deleted.')
 
+    def resolve_admin_user_id(value):
+        if type(value) is int:
+            if not 0 < value <= 2**63 - 1:
+                abort(400, 'Enter a valid positive Telegram user ID or @username.')
+            return value
+        if not isinstance(value, str):
+            abort(400, 'Enter a Telegram user ID or @username.')
+        value = value.strip()
+        if value.isdecimal():
+            try:
+                uid = int(value)
+            except ValueError:
+                uid = 0
+            if 0 < uid <= 2**63 - 1:
+                return uid
+            abort(400, 'Enter a valid positive Telegram user ID or @username.')
+        username = value[1:] if value.startswith('@') else value
+        if not (5 <= len(username) <= 32 and username[0].isalpha()
+                and all(char.isalnum() or char == '_' for char in username)):
+            abort(400, 'Enter a valid Telegram ID or username (for example @thearith).')
+        with engine.connect() as conn:
+            uid = conn.execute(select(access_requests.c.user_id).where(
+                func.lower(access_requests.c.username) == username.lower())).scalar_one_or_none()
+            if uid is None:
+                uid = conn.execute(select(registered_users.c.user_id).where(
+                    func.lower(registered_users.c.username) == username.lower())).scalar_one_or_none()
+        if uid is None:
+            abort(404, 'Username not found. Ask that person to open the bot and send /start or /request first; Telegram does not let bots look up arbitrary usernames.')
+        return uid
+
     @app.post('/api/admin/users')
     @auth
     def admin_create_user():
         require_owner()
         body = json_body()
-        target_id, name = body.get('user_id'), body.get('name', '')
-        if type(target_id) is not int or not 0 < target_id <= 2**63 - 1:
-            abort(400, 'Enter a valid positive Telegram user ID.')
+        target_id, name = resolve_admin_user_id(body.get('user_id')), body.get('name', '')
         if target_id == admin or is_admin_user(target_id):
             abort(409, 'This ID belongs to an administrator.')
         if not isinstance(name, str) or len(name.strip()) > 80:
             abort(400, 'Name must be at most 80 characters.')
         display_name = name.strip() or f'User {target_id}'
         with engine.begin() as conn:
-            exists = conn.execute(select(registered_users.c.user_id).where(
-                registered_users.c.user_id == target_id)).first()
-            if exists:
-                abort(409, 'This user is already registered.')
-            conn.execute(insert(registered_users).values(user_id=target_id, name=display_name,
-                last_seen=0, admin_label=name.strip() or None))
+            conn.execute(delete(deleted_users).where(deleted_users.c.user_hash == deleted_user_hash(target_id)))
+            existing = conn.execute(select(registered_users).where(
+                registered_users.c.user_id == target_id)).mappings().first()
+            previous_status = conn.execute(select(access_requests.c.status).where(
+                access_requests.c.user_id == target_id)).scalar_one_or_none()
+            if previous_status == 'approved':
+                abort(409, 'This user already has access.')
+            if existing:
+                if name.strip():
+                    conn.execute(update(registered_users).where(registered_users.c.user_id == target_id)
+                        .values(admin_label=name.strip()))
+            else:
+                conn.execute(insert(registered_users).values(user_id=target_id, name=display_name,
+                    last_seen=0, admin_label=name.strip() or None))
             if engine.dialect.name == 'postgresql':
                 from sqlalchemy.dialects.postgresql import insert as upsert
             else:
@@ -537,7 +707,7 @@ def create_app(config=None):
                 .on_conflict_do_update(index_elements=['user_id'], set_={
                     'name': display_name, 'status': 'approved', 'request_key': uuid.uuid4().hex, 'notified_at': 0}))
             conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
-                action='create_user', at=int(time.time())))
+                action='grant' if existing else 'create_user', at=int(time.time())))
         delivered = telegram('sendMessage', {'chat_id': target_id,
             'text': '✅ Your MyMoney access is ready. Open the bot to begin.',
             'reply_markup': open_buttons()})
@@ -577,7 +747,7 @@ def create_app(config=None):
         require_known_user(target_id)
         with engine.begin() as conn:
             for table in (transactions, budgets, spending_budgets, savings_goals, budget_alerts,
-                          registered_users, delete_batches):
+                          registered_users, delete_batches, admin_login_attempts):
                 if 'user_id' in table.c:
                     conn.execute(delete(table).where(table.c.user_id == target_id))
             conn.execute(delete(admin_actions).where(admin_actions.c.target_id == target_id))
@@ -585,15 +755,19 @@ def create_app(config=None):
             for table in personal_tables.values():
                 if 'user_id' in table.c:
                     conn.execute(delete(table).where(table.c.user_id == target_id))
+            conn.execute(delete(access_requests).where(access_requests.c.user_id == target_id))
             if engine.dialect.name == 'postgresql':
-                from sqlalchemy.dialects.postgresql import insert as upsert
+                from sqlalchemy.dialects.postgresql import insert as tombstone_upsert
             else:
-                from sqlalchemy.dialects.sqlite import insert as upsert
-            conn.execute(upsert(access_requests).values(user_id=target_id, name='Deleted user', status='deleted',
-                request_key=uuid.uuid4().hex, notified_at=0).on_conflict_do_update(index_elements=['user_id'],
-                    set_={'name': 'Deleted user', 'status': 'deleted', 'request_key': uuid.uuid4().hex, 'notified_at': 0}))
-            # Keep the audit trail so the owner can see who removed the account.
-            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=target_id,
+                from sqlalchemy.dialects.sqlite import insert as tombstone_upsert
+            # Keep only a keyed digest, not a name or raw Telegram ID, to prevent
+            # accidental reapproval through a legacy allowlist.
+            conn.execute(tombstone_upsert(deleted_users).values(user_hash=deleted_user_hash(target_id),
+                deleted_at=int(time.time())).on_conflict_do_update(index_elements=['user_hash'],
+                    set_={'deleted_at': int(time.time())}))
+            # Retain audit events, but remove the deleted account's raw ID from them.
+            conn.execute(update(admin_audit).where(admin_audit.c.target_id == target_id).values(target_id=0))
+            conn.execute(insert(admin_audit).values(admin_id=admin, target_id=0,
                 action='delete_user', at=int(time.time())))
         return {'ok': True, 'deleted_user_id': target_id}
 
@@ -720,12 +894,13 @@ def create_app(config=None):
         with engine.connect() as conn:
             rows = conn.execute(select(known.c.user_id,
                     func.coalesce(registered_users.c.admin_label, registered_users.c.name).label('name'),
-                    registered_users.c.last_seen, access_requests.c.status,
+                    registered_users.c.username, registered_users.c.last_seen, access_requests.c.status,
                     func.count(transactions.c.id).label('transaction_count'))
                 .select_from(known.outerjoin(registered_users, registered_users.c.user_id == known.c.user_id)
                     .outerjoin(access_requests, access_requests.c.user_id == known.c.user_id)
                     .outerjoin(transactions, transactions.c.user_id == known.c.user_id))
                 .group_by(known.c.user_id, registered_users.c.name, registered_users.c.admin_label,
+                          registered_users.c.username,
                           registered_users.c.last_seen,
                           access_requests.c.status).order_by(known.c.user_id)).mappings().all()
         users = []
@@ -733,6 +908,7 @@ def create_app(config=None):
             uid = row['user_id']
             status = row['status'] or ('approved' if uid in allowed else 'not_requested')
             users.append({'id': uid, 'name': row['name'] or 'User', 'last_seen': row['last_seen'],
+                          'username': row['username'],
                           'status': 'admin' if is_admin_user(uid) else status,
                           'transaction_count': row['transaction_count']})
         return {'users': users}
@@ -764,6 +940,7 @@ def create_app(config=None):
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
         status = access or ('approved' if target_id in allowed else 'not_requested')
         return {'user': {'id': target_id, 'name': (user or {}).get('admin_label') or (user or {}).get('name', 'User'),
+                    'username': (user or {}).get('username'),
                     'last_seen': (user or {}).get('last_seen'), 'status': status},
                 'totals': [{'currency': c, 'kind': k, 'amount': int(amount)} for c, k, amount in totals],
                 'budgets': [dict(row) for row in limits],
@@ -829,6 +1006,7 @@ def create_app(config=None):
         else:
             from sqlalchemy.dialects.sqlite import insert as upsert
         with engine.begin() as conn:
+            conn.execute(delete(deleted_users).where(deleted_users.c.user_hash == deleted_user_hash(target_id)))
             existing = conn.execute(select(app_admins.c.user_id).where(app_admins.c.user_id == target_id)).first()
             if existing:
                 abort(409, 'This user is already an administrator.')

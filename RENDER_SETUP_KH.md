@@ -13,6 +13,8 @@
 | WEBHOOK_SECRET | secret ថ្មីដែលអ្នករក្សាទុកជាសម្ងាត់ |
 | DATABASE_URL | Neon PostgreSQL connection URL ពេញ ជាមួយ SSL parameters |
 | ADMIN_USER_ID | ដំបូងទុកទទេ បើមិនទាន់ស្គាល់ ID របស់ខ្លួន |
+| ADMIN_PASSWORD_HASH | Hash ពាក្យសម្ងាត់ Admin (កុំដាក់ពាក្យសម្ងាត់ធម្មតា) |
+| FLASK_SECRET_KEY | Generate secret ក្នុង Render; រក្សាវាឱ្យនៅដដែល |
 | ALLOWED_USER_IDS | ទុកទទេ ឬ ID ពិតរបស់អ្នកដែលអនុញ្ញាតជាមុន |
 | PYTHON_VERSION | 3.12.14 |
 
@@ -43,11 +45,21 @@ Deploy → រង់ចាំ Live។ ពិនិត្យ Logs ថាមាន
 3. ដាក់លេខនោះក្នុង Render `ADMIN_USER_ID` ហើយ Save and deploy។
 4. ផ្ញើ `/start` ទៅ Bot ពីគណនី Admin នោះ ដើម្បីទទួល notification។
 
+បង្កើត password hash ក្នុង PowerShell ក្រោយ install requirements:
+
+```powershell
+.venv\Scripts\python -c "from getpass import getpass; from werkzeug.security import generate_password_hash; print(generate_password_hash(getpass('New Admin password: ')))"
+```
+
+Copy hash ទៅ Render `ADMIN_PASSWORD_HASH` ហើយកំណត់ `FLASK_SECRET_KEY` ជា secret ថ្មី។ Deploy រួច បើក Settings → Admin Console ហើយបញ្ចូល password។ ផ្ទាំងចាក់សោវិញស្វ័យប្រវត្តិក្រោយ ១៥ នាទី ឬចុច **Lock Admin**។ បញ្ចូលខុស ៥ ដង នឹងរង់ចាំ ១៥ នាទី។
+
 ## ៥. អនុញ្ញាតអ្នកប្រើថ្មី
 
 អ្នកប្រើ → `/start` → ចុច `Request access`។
 Admin → ទទួលឈ្មោះ និង ID → ចុច `Approve` ឬ `Reject`។
 អ្នកប្រើដែលបានអនុញ្ញាត → បិទ Mini App និងបើកម្ដងទៀត។ មិនចាំបាច់ redeploy ទេ។
+
+ដើម្បីបន្ថែមពី Admin Console តាម ID ឬ `@username` សូមឱ្យគណនីនោះផ្ញើ `/start` ឬ `/request` ទៅ Bot មុន។ Telegram មិនអនុញ្ញាតឱ្យ Bot ស្វែងរក username ដែលមិនធ្លាប់ឃើញទេ។ អ្នកអាចសាកល្បងដោយប្រើគណនី Telegram ទីពីររបស់អ្នក។
 
 បើមិនទទួល notification ផ្ញើ `/requests` ពី Admin ដើម្បីមើលសំណើ pending ៥ ក្នុងមួយលើក។ គ្មានអ្នកប្រើផ្សេងអាចចុចអនុញ្ញាតជំនួស Admin បានទេ។
 

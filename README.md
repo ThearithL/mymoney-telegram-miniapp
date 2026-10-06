@@ -17,7 +17,8 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Owner admin dashboard: USD/KHR monthly expense donut charts, user/access totals, user records, message history and admin audit.
 - Owner can send a private Telegram message to a selected user and review the delivery history.
 - Owner-only transaction CRUD in the Admin Console: create and edit a user's records; deletes go to that user's recoverable Trash.
-- User CRUD in Admin Console: create/approve by Telegram ID, search/filter, edit a persistent admin display label, change access, or permanently remove a non-admin account and its personal data after typing the exact ID. A minimal deleted-access marker remains so a legacy allowlist cannot restore access. The owner account and admin accounts are protected.
+- User CRUD in Admin Console: create/approve by Telegram ID or a previously observed @username, search/filter, edit a persistent admin display label, change access, or permanently erase a non-admin account and its app data after typing the exact ID. A keyed, non-reversible deletion marker prevents rejoining from a legacy allowlist; audit history remains anonymized. The owner account and admin accounts are protected.
+- Admin password gate: a password hash configured in Render, 15-minute dashboard unlock, explicit Lock button, HttpOnly/SameSite cookies, and a database-backed 5-attempt/15-minute lockout. Telegram signed Mini App authentication is still required.
 - Request access button, admin Approve/Reject buttons, persistent access decisions in Neon.
 - `/id` works before approval; `/request` submits access; `/requests` recovers pending requests for the owner.
 - `ADMIN_USER_ID` grants the owner access; nobody can claim admin through the UI.
@@ -64,11 +65,21 @@ BOT_TOKEN=your_botfather_token
 APP_URL=https://your-service.onrender.com
 WEBHOOK_SECRET=your_generated_random_secret
 ADMIN_USER_ID=your_numeric_personal_telegram_id
+ADMIN_PASSWORD_HASH=your_werkzeug_password_hash
+FLASK_SECRET_KEY=your_random_64_character_secret
 ALLOWED_USER_IDS=
 DATABASE_URL=postgresql://user:password@host/database
 ```
 
-Optional extra pre-approved IDs in ALLOWED_USER_IDS are comma-separated. If both ADMIN_USER_ID and ALLOWED_USER_IDS are empty, Mini App access is disabled until owner bootstrap. Approved users are stored in access_requests, not environment variables. No credentials are included in this project. Never commit `.env`.
+Optional extra pre-approved IDs in ALLOWED_USER_IDS are comma-separated. If both ADMIN_USER_ID and ALLOWED_USER_IDS are empty, Mini App access is disabled until owner bootstrap. Approved users are stored in access_requests, not environment variables. Never commit `.env` or password hashes/secrets.
+
+Generate the Admin password hash after installing requirements, then set it only in Render Environment (do not store the plain password as an environment variable):
+
+```powershell
+.venv\Scripts\python -c "from getpass import getpass; from werkzeug.security import generate_password_hash; print(generate_password_hash(getpass('New Admin password: ')))"
+```
+
+Copy the printed hash into Render `ADMIN_PASSWORD_HASH`. Use a long unique password. Set `FLASK_SECRET_KEY` to a separate random secret and keep it unchanged; it signs secure Admin sessions and keyed deletion markers. The password is required again after 15 minutes or when you press Lock. Five failed attempts lock Admin login for 15 minutes. Admin APIs require both valid Telegram Mini App authentication and the password unlock.
 
 ## 2. Deploy to Render with PostgreSQL
 

@@ -154,6 +154,35 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         if data is None:abort(404,'No receipt photo')
         return Response(data,mimetype='image/jpeg',headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
 
+    @app.get('/api/transactions/<int:identity>/qr')
+    @auth
+    def get_transaction_qr(identity):
+        # QR contains a small, self-contained summary, not a payment address or a
+        # public URL. Ownership is checked before any record data is encoded.
+        with engine.connect() as conn:
+            row=owned_entry(conn,identity)
+        amount_text=(f"{row['amount']//100}.{row['amount']%100:02d}"
+                     if row['currency']=='USD' else str(row['amount']))
+        payload={
+            'type':'MYMONEY_PERSONAL_RECORD',
+            'id':row['id'],
+            'kind':row['kind'],
+            'amount':amount_text,
+            'currency':row['currency'],
+            'date':row['day'].isoformat(),
+            'category':row['category'],
+            'account':row['account'],
+        }
+        try:
+            import qrcode
+            image=qrcode.make(json.dumps(payload,separators=(',',':'),ensure_ascii=False))
+            output=io.BytesIO();image.save(output,format='PNG')
+        except ImportError:
+            abort(503,'QR code support is not installed.')
+        return Response(output.getvalue(),mimetype='image/png',headers={
+            'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+        })
+
     @app.put('/api/transactions/<int:identity>/photo')
     @auth
     def put_photo(identity):
