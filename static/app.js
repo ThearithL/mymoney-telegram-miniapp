@@ -43,8 +43,9 @@ function applyTheme(){
   document.documentElement.dataset.theme=dark?'dark':'light';
   $('theme').value=appTheme;
 }
-let screenMode='device';
-try{screenMode=localStorage.getItem('mymoney-screen-mode')||'device';}catch{}
+// Fullscreen is the first-run default. A saved user choice always takes priority.
+let screenMode='fullscreen';
+try{screenMode=localStorage.getItem('mymoney-screen-mode')||'fullscreen';}catch{}
 function toast(message){clearTimeout(toastTimer);$('toast').textContent='✓ '+message;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
 function bootDone(){$('bootLoader').hidden=true;}
 function busy(button,on){button.classList.toggle('busy',on);button.disabled=on;button.setAttribute('aria-busy',String(on));}
