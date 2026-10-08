@@ -33,6 +33,7 @@ transactions = Table('transactions', metadata,
     Column('spending_type', String(12)),
     Column('account', String(20), nullable=False), Column('note', String(300), nullable=False),
     Column('day', Date, nullable=False), Column('request_id', String(64), nullable=False),
+    Column('items_json', Text),
     UniqueConstraint('user_id', 'request_id'))
 budgets = Table('budgets', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False),
@@ -178,6 +179,10 @@ def create_app(config=None):
         url = 'postgresql+psycopg://' + url.split('://', 1)[1]
     engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)
+    # Additive migration for existing Neon/SQLite installs.
+    if 'items_json' not in {column['name'] for column in inspect(engine).get_columns('transactions')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE transactions ADD COLUMN items_json TEXT'))
     def deleted_user_hash(uid):
         return hmac.new(app.secret_key.encode(), f'deleted-user:{uid}'.encode(), hashlib.sha256).hexdigest()
     # Upgrade old deletion markers to non-reversible tombstones, then erase their
@@ -530,9 +535,37 @@ def create_app(config=None):
                 raise ValueError()
             if kind == 'income':
                 spending_type = None
+            items = body.get('items')
+            if items is not None:
+                if kind != 'expense' or not isinstance(items, list) or not 1 <= len(items) <= 30:
+                    raise ValueError()
+                normalized_items = []
+                total = 0
+                for item in items:
+                    if not isinstance(item, dict):
+                        raise ValueError()
+                    name = item.get('name')
+                    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
+                        raise ValueError()
+                    quantity = item.get('quantity', 1)
+                    if type(quantity) is not int or not 1 <= quantity <= 100000:
+                        raise ValueError()
+                    unit_amount = amount_units(item.get('amount'), currency)
+                    line_total = unit_amount * quantity
+                    if line_total > 10**12:
+                        raise ValueError()
+                    total += line_total
+                    normalized_items.append({'name': name.strip(), 'quantity': quantity,
+                                             'unit_amount': unit_amount, 'amount': line_total})
+                if total != amount_units(body['amount'], currency):
+                    raise ValueError()
+                items_json = json.dumps(normalized_items, ensure_ascii=False)
+            else:
+                items_json = None
             return dict(kind=kind, category=category, account=account, currency=currency,
                         spending_type=spending_type,
-                        amount=amount_units(body['amount'], currency), day=day, note=note.strip())
+                        amount=amount_units(body['amount'], currency), day=day, note=note.strip(),
+                        items_json=items_json)
         except (KeyError, ValueError, TypeError):
             abort(400, 'Check transaction fields, date and note (maximum 300 characters).')
 
@@ -544,6 +577,14 @@ def create_app(config=None):
             result['day'] = result['day'].isoformat()
         if result.get('target_date') is not None:
             result['target_date'] = result['target_date'].isoformat()
+        if result.get('items_json'):
+            try:
+                result['items'] = json.loads(result['items_json'])
+            except (TypeError, ValueError):
+                result['items'] = []
+        else:
+            result['items'] = []
+        result.pop('items_json', None)
         return result
 
     @app.get('/api/data')

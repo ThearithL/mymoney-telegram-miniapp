@@ -56,6 +56,25 @@ def test_crud_idempotency_and_ownership(client):
     assert client.delete(f'/api/transactions/{identity}',headers=headers()).status_code==200
     assert not client.get('/api/data?month=2026-01',headers=headers()).json['transactions']
 
+def test_expense_items_are_saved_and_must_match_total(client):
+    data=payload(amount='7.00',items=[
+        {'name':'Coca-Cola','amount':'1.00','quantity':1},
+        {'name':'Coconut','amount':'3.00','quantity':2},
+    ])
+    response=client.post('/api/transactions',json=data,headers=headers())
+    assert response.status_code==201
+    row=client.get('/api/data?month=2026-01',headers=headers()).json['transactions'][0]
+    assert row['amount']==700
+    assert row['items']==[
+        {'name':'Coca-Cola','quantity':1,'unit_amount':100,'amount':100},
+        {'name':'Coconut','quantity':2,'unit_amount':300,'amount':600},
+    ]
+    mismatch=payload(amount='8.00',items=[{'name':'Coconut','amount':'3.00','quantity':2}],request_id='items-bad-123')
+    assert client.post('/api/transactions',json=mismatch,headers=headers()).status_code==400
+    invalid_qty=payload(amount='3.00',items=[{'name':'Coconut','amount':'3.00','quantity':1.5}],request_id='items-qty-123')
+    assert client.post('/api/transactions',json=invalid_qty,headers=headers()).status_code==400
+
+
 def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch):
     # The runtime dependency is installed from requirements.txt in deployment.
     # Stub its encoder here so this test remains offline-friendly.
@@ -63,7 +82,7 @@ def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch
     from PIL import Image
     encoded=[]
     monkeypatch.setitem(sys.modules,'qrcode',types.SimpleNamespace(make=lambda payload:(encoded.append(payload) or Image.new('RGB',(21,21),'black'))))
-    created=client.post('/api/transactions',json=payload(),headers=headers())
+    created=client.post('/api/transactions',json=payload(amount='7.00',items=[{'name':'Coca-Cola','amount':'1.00','quantity':1},{'name':'Coconut','amount':'3.00','quantity':2}]),headers=headers())
     identity=created.json['id']
     assert client.get(f'/api/transactions/{identity}/qr').status_code==401
     assert client.get(f'/api/transactions/{identity}/qr',headers=headers(uid=456)).status_code==404
@@ -77,7 +96,9 @@ def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch
     image=client.get(image_url.path)
     assert image.status_code==200 and image.mimetype=='image/svg+xml'
     assert 'កំណត់ត្រាចំណាយផ្ទាល់ខ្លួន' in image.get_data(as_text=True)
-    assert '$12.34' in image.get_data(as_text=True)
+    assert '$7.00' in image.get_data(as_text=True)
+    assert 'Coca-Cola × 1' in image.get_data(as_text=True)
+    assert 'Coconut × 2' in image.get_data(as_text=True)
     assert image.headers['Content-Disposition'].startswith('inline;')
     assert client.get('/shared/record/not-a-valid-signature.svg').status_code==404
 

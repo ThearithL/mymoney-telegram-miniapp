@@ -202,21 +202,33 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         category=category_labels.get(row['category'],row['category'])
         kind_title='កំណត់ត្រាចំណូលផ្ទាល់ខ្លួន' if row['kind']=='income' else 'កំណត់ត្រាចំណាយផ្ទាល់ខ្លួន'
         account='សាច់ប្រាក់' if row['account']=='cash' else 'ធនាគារ'
+        raw_items=[]
+        if row.get('items_json'):
+            try:raw_items=json.loads(row['items_json'])
+            except (TypeError,ValueError):raw_items=[]
+        item_svg=''.join(
+            f'<g><text class="value" x="92" y="{490+i*54}">{escape(str(item.get("name","Item"))[:80])} × {int(item.get("quantity",1))}</text>'
+            f'<text class="value" x="688" y="{490+i*54}" text-anchor="end">{escape(f"{currency} {int(item.get('amount',0)) / (100 if currency == 'USD' else 1):,.2f}" if currency == 'USD' else f"៛{int(item.get('amount',0)):,}")}</text>'
+            f'<path d="M92 {508+i*54}h596" class="rule"/></g>'
+            for i,item in enumerate(raw_items[:30]) if isinstance(item,dict))
         details=[('លេខកំណត់ត្រា',f"#{row['id']}"),('ថ្ងៃ',row['day'].isoformat()),
                  ('ប្រភេទ',category),('គណនី',account)]
+        details_start=490+len(raw_items[:30])*54+ (18 if raw_items else 0)
         detail_svg=''.join(
-            f'<g><text class="label" x="92" y="{490+i*96}">{escape(label)}</text>'
-            f'<text class="value" x="688" y="{490+i*96}" text-anchor="end">{escape(str(value))}</text>'
-            f'<path d="M92 {518+i*96}h596" class="rule"/></g>'
+            f'<g><text class="label" x="92" y="{details_start+i*72}">{escape(label)}</text>'
+            f'<text class="value" x="688" y="{details_start+i*72}" text-anchor="end">{escape(str(value))}</text>'
+            f'<path d="M92 {details_start+22+i*72}h596" class="rule"/></g>'
             for i,(label,value) in enumerate(details))
-        svg=f'''<svg xmlns="http://www.w3.org/2000/svg" width="780" height="930" viewBox="0 0 780 930" role="img" aria-labelledby="title desc">
+        image_height=max(930,details_start+4*72+100)
+        footer_y=image_height-48
+        svg=f'''<svg xmlns="http://www.w3.org/2000/svg" width="780" height="{image_height}" viewBox="0 0 780 {image_height}" role="img" aria-labelledby="title desc">
 <title id="title">{escape(kind_title)}</title><desc id="desc">{escape(amount)} · {escape(row['day'].isoformat())}</desc>
 <style>text{{font-family:"Noto Sans Khmer","Battambang",system-ui,sans-serif;fill:#17352a}}.title{{font-size:27px;font-weight:700}}.subtitle{{font-size:16px;fill:#70847b}}.amount{{font-size:54px;font-weight:750}}.label{{font-size:17px;fill:#70847b}}.value{{font-size:18px;font-weight:650}}.rule{{stroke:#e4ebe6;stroke-width:2}}</style>
-<rect width="780" height="930" rx="42" fill="#eef4ef"/><rect x="34" y="34" width="712" height="862" rx="34" fill="#fff" stroke="#dce8df" stroke-width="2"/>
+<rect width="780" height="{image_height}" rx="42" fill="#eef4ef"/><rect x="34" y="34" width="712" height="{image_height-68}" rx="34" fill="#fff" stroke="#dce8df" stroke-width="2"/>
 <circle cx="390" cy="142" r="42" fill="#dff2e7"/><path d="m371 143 13 13 27-31" fill="none" stroke="#23845c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 <text class="title" x="390" y="230" text-anchor="middle">{escape(kind_title)}</text><text class="subtitle" x="390" y="270" text-anchor="middle">MYMONEY · PERSONAL</text>
-<text class="amount" x="390" y="382" text-anchor="middle">{escape(amount)}</text><path d="M92 426h596" stroke="#d9e5dd" stroke-width="2" stroke-dasharray="8 8"/>{detail_svg}
-<text class="subtitle" x="390" y="850" text-anchor="middle">កំណត់ត្រាផ្ទាល់ខ្លួន · មិនមែនជាបង្កាន់ដៃចេញពីហាង</text></svg>'''
+<text class="amount" x="390" y="382" text-anchor="middle">{escape(amount)}</text><path d="M92 426h596" stroke="#d9e5dd" stroke-width="2" stroke-dasharray="8 8"/>{item_svg}{detail_svg}
+<text class="subtitle" x="390" y="{footer_y}" text-anchor="middle">កំណត់ត្រាផ្ទាល់ខ្លួន · មិនមែនជាបង្កាន់ដៃចេញពីហាង</text></svg>'''
         return Response(svg,mimetype='image/svg+xml',headers={
             'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
             'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'",
