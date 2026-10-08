@@ -117,6 +117,14 @@ The script registers the webhook, chat menu button and bot commands including `/
 
 Now send `/start` and tap **💰 Open MyMoney** or the chat menu button. Use a private bot chat. The app must be opened through Telegram for authenticated API access. Ordinary browser access shows the layout and an instruction to open Telegram; it does not bypass login.
 
+## Telegram notifications for Render deploys
+
+Render build/start scripts send best-effort Telegram notices directly from the Render service. No GitHub Actions workflow or GitHub Secrets are used. The build script alerts on dependency-install failure; the start script alerts if Telegram setup, Gunicorn startup, or the `/health` check fails, and sends a success notice once `/health` returns HTTP 200. This confirms the app process is responding; Render may take a short time afterward to mark the deploy live.
+
+The scripts use the Render environment variables already used by the app: `BOT_TOKEN` and numeric `ADMIN_USER_ID`. Ensure both are configured for the Render service and available during builds. The admin must send `/start` to the bot once before Telegram can send them messages. Notifications are best effort: missing variables or Telegram/network errors do not fail an otherwise successful build or app startup.
+
+For a manual Render service, set **Build Command** to `bash scripts/render-build.sh` and **Start Command** to `python scripts/render_start.py`; keep **Health Check Path** as `/health`. `render.yaml` already contains these commands for Blueprint deployments.
+
 ## 4. Everyday use
 
 1. Select the month and KHR or USD at the top.
@@ -182,6 +190,12 @@ Tests cover signed authentication, expired/forged sessions, user ownership, crea
 7. ផ្ញើ `/start` ហើយចុចបើក MyMoney។ មិនចាំបាច់វាយ Command ដើម្បីកត់ចំណាយទេ។
 
 មិនទាន់ deploy ដោយស្វ័យប្រវត្តិទេ៖ អ្នកត្រូវបំពេញ Token, HTTPS URL និង Database របស់អ្នកជាមុន។
+
+### សារជូនដំណឹង Deploy ទៅ Telegram Admin
+
+Render build/start script ផ្ញើស្ថានភាពទៅ Telegram Admin ដោយប្រើ `BOT_TOKEN` និង `ADMIN_USER_ID` ក្នុង Render Environment។ មិនត្រូវបន្ថែម token ឬ secret ទៅ GitHub ទេ។ កំណត់ Build Command ជា `bash scripts/render-build.sh` និង Start Command ជា `python scripts/render_start.py`។
+
+មិនត្រូវបន្ថែម Secret ក្នុង GitHub ទេ។ កំណត់ `BOT_TOKEN` និង `ADMIN_USER_ID` នៅ Render → Environment (បើមានរួច សូមប្រើតម្លៃដដែល) ហើយ Admin ផ្ញើ `/start` ទៅ Bot ម្ដង ដើម្បីអាចទទួលសារជូនដំណឹង។
 
 ## Admin approval behavior
 

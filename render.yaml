@@ -2,8 +2,8 @@ services:
   - type: web
     name: mymoney-miniapp
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python setup_bot.py && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
+    buildCommand: bash scripts/render-build.sh
+    startCommand: python scripts/render_start.py
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
