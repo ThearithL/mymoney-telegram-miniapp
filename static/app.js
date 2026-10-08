@@ -31,7 +31,9 @@ Object.assign(en,{confirmDeleteGoalTitle:'Delete this goal?',confirmDeleteGoalHe
 Object.assign(km,{confirmDeleteGoalTitle:'លុបគោលដៅនេះ?',confirmDeleteGoalHelp:'ការលុបនឹងលុបគោលដៅ និងប្រវត្តិសន្សំទាំងអស់ជាអចិន្ត្រៃយ៍។ មិនអាចស្ដារវិញបានទេ។',confirmDeleteGoal:'លុបជាអចិន្ត្រៃយ៍',cancel:'បោះបង់'});
 Object.assign(en,{monthSpentAverage:'Average spent per day',usedPercent:'used',budgetThresholdAlert:'Budget alert starts at 80%'});
 Object.assign(km,{monthSpentAverage:'ចំណាយមធ្យមក្នុងមួយថ្ងៃ',usedPercent:'បានប្រើ',budgetThresholdAlert:'ជូនដំណឹងចាប់ពីប្រើថវិកា 80%'});
+Object.assign(en,{goalDeadline:'Target date (optional)',goalDeadlinePassed:'Target date has passed. Edit it to see the monthly amount.',goalMonthlyNeed:'Needed per month',goalTotalKhr:'Total saved · KHR',goalTotalUsd:'Total saved · USD',goalActiveCount:'Active goals'});
 Object.assign(en,{spendingNone:'Unclassified'});
+Object.assign(km,{goalDeadline:'ថ្ងៃចង់សម្រេច (ជាជម្រើស)',goalDeadlinePassed:'ថ្ងៃគោលដៅហួសហើយ។ កែថ្ងៃដើម្បីមើលចំនួនសន្សំប្រចាំខែ។',goalMonthlyNeed:'ត្រូវសន្សំក្នុងមួយខែ',goalTotalKhr:'សន្សំសរុប · KHR',goalTotalUsd:'សន្សំសរុប · USD',goalActiveCount:'គោលដៅកំពុងសន្សំ'});
 Object.assign(km,{spendingNone:'មិនកំណត់'});
 
 Object.assign(en,{moreTools:'More personal tools',screenMode:'Mini App display size',screenModeDevice:'Follow Telegram/device',screenModeFull:'Fullscreen',screenModeNormal:'Normal (not fullscreen)',fullscreenHelp:'Choose how the Mini App fits your screen. Your choice is saved on this device.',fullscreenUnsupported:'Fullscreen is not supported by this Telegram client; choose device or normal mode.',fullscreenFailed:'Telegram could not change the fullscreen mode.'});
@@ -234,9 +236,9 @@ function renderGoals(){
   const root=$('goalList'),overview=$('goalOverview');root.replaceChildren();overview.replaceChildren();
   const visible=goalsState.filter(goal=>!goal.archived),active=visible.filter(goal=>goal.saved<goal.target);
   const completed=visible.filter(goal=>goal.saved>=goal.target),hidden=goalsState.filter(goal=>goal.archived),currency=$('currency').value;
-  const savedTotal=goalsState.filter(goal=>goal.currency===currency).reduce((sum,goal)=>sum+goal.saved,0);
+  const savedKhr=goalsState.filter(goal=>goal.currency==='KHR').reduce((sum,goal)=>sum+goal.saved,0),savedUsd=goalsState.filter(goal=>goal.currency==='USD').reduce((sum,goal)=>sum+goal.saved,0);
   const stat=(label,value,icon)=>{const item=node('div',undefined,'goal-stat');item.append(node('span',icon,'goal-stat-icon'),node('small',label),node('strong',value));overview.append(item);};
-  stat(t('goalSavedTotal')+' · '+currency,money(savedTotal,currency),'💰');stat(t('goalActiveCount'),String(active.length),'🎯');stat(t('goalCompletedCount'),String(completed.length+hidden.length),'✓');
+  stat(t('goalTotalKhr'),money(savedKhr,'KHR'),'៛');stat(t('goalTotalUsd'),money(savedUsd,'USD'),'$');stat(t('goalActiveCount'),String(active.length),'🎯');
   const makeCard=goal=>{
     const card=node('article',undefined,'card goal-card'+(goal.archived?' is-archived':''));
     const top=node('div',undefined,'section-title');const title=node(goal.archived?'span':'button','🎯 '+goal.title,'goal-title-button');
@@ -244,6 +246,7 @@ function renderGoals(){
     const progress=node('progress');progress.max=goal.target;progress.value=Math.min(goal.saved,goal.target);progress.setAttribute('aria-label',goal.title);const done=goal.saved>=goal.target;
     card.append(top,node('strong',money(goal.saved,goal.currency)),node('p','/ '+money(goal.target,goal.currency),'muted'),progress);if(!done)card.append(node('p',t('goalRemaining')+': '+money(goal.remaining,goal.currency),'goal-remaining'));
     if(goal.estimated_days&&goal.saved<goal.target){const estimateDate=new Date();estimateDate.setDate(estimateDate.getDate()+goal.estimated_days);card.append(node('small',t('goalEstimate')+': '+goal.estimated_days+' '+t('goalDays')+' · '+estimateDate.toLocaleDateString(),'muted'));}
+    if(goal.target_date){card.append(node('p',t('goalDeadline')+': '+new Date(goal.target_date+'T00:00:00').toLocaleDateString(lang==='km'?'km-KH':'en-US'),'muted'));if(goal.remaining>0&&goal.monthly_needed)card.append(node('p',t('goalMonthlyNeed')+': '+money(goal.monthly_needed,goal.currency),'goal-monthly-need'));else if(goal.remaining>0&&goal.months_to_target===0)card.append(node('p',t('goalDeadlinePassed'),'muted'));}
     if(done)card.append(node('p','✓ '+t('goalComplete'),'positive goal-complete-label'));
     const actions=node('div',undefined,'goal-card-actions');
     if(!goal.archived){const manage=node('button',t('quickAddSavings'),'primary');manage.type='button';manage.onclick=()=>openGoal(goal,true);actions.append(manage);const edit=node('button',t('editGoal'),'secondary');edit.type='button';edit.onclick=()=>openGoal(goal);actions.append(edit);}
@@ -278,6 +281,7 @@ function updateGoalTracking(goal){
   const scale=goal.currency==='USD'?100:1;
   $('goalSaved').value=goal.saved/scale;$('goalRemaining').textContent=t('goalRemaining')+': '+money(goal.remaining,goal.currency)+' · '+goal.percent+'%';
   $('goalEstimate').textContent=goal.estimated_days?t('goalEstimate')+': '+goal.estimated_days+' '+t('goalDays'):t('goalNoEstimate');
+  const monthly=goal.target_date&&goal.remaining>0?(goal.monthly_needed||goal.remaining):0;$('goalMonthlyNeed').textContent=goal.target_date?(monthly?t('goalMonthlyNeed')+': '+money(monthly,goal.currency):goal.remaining>0&&goal.months_to_target===0?t('goalDeadlinePassed'):'✓ '+t('goalComplete')):'';
 }
 async function loadGoalEntries(goal){
   const root=$('goalEntryList');root.replaceChildren();
@@ -296,7 +300,7 @@ function openGoal(goal=null,focusSavings=false){
   $('goalName').value=goal?.title||'';$('goalCurrency').value=goal?.currency||$('currency').value;$('goalCurrency').disabled=!!goal;goalPrecision();renderGoalQuickAmounts();
   const scale=$('goalCurrency').value==='USD'?100:1;
   $('goalEntryAmount').step=$('goalCurrency').value==='USD'?'0.01':'1';$('goalEntryAmount').min=$('goalEntryAmount').step;
-  $('goalTarget').value=goal?goal.target/scale:'';$('goalSaved').value=goal?goal.saved/scale:0;$('deleteGoal').hidden=!goal;
+  $('goalTarget').value=goal?goal.target/scale:'';$('goalSaved').value=goal?goal.saved/scale:0;$('goalTargetDate').value=goal?.target_date||'';$('goalTargetDate').min=goal?.target_date||today();$('deleteGoal').hidden=!goal;
   $('goalTracking').hidden=!goal;$('goalEntryAmount').value='';$('goalEntryStatus').textContent='';
   if(goal){updateGoalTracking(goal);loadGoalEntries(goal);}
   $('goalDialog').showModal();if(goal&&focusSavings)setTimeout(()=>$('goalEntryAmount').focus(),80);
@@ -314,7 +318,7 @@ async function submitGoalMoney(direction){
 }
 $('goalForm').onsubmit=async e=>{
   e.preventDefault();busy($('saveGoal'),true);$('deleteGoal').disabled=true;$('goalError').textContent='';
-  try{await api('/api/goals'+(currentGoal?'/'+currentGoal.id:''),{method:currentGoal?'PUT':'POST',body:JSON.stringify({title:$('goalName').value,currency:$('goalCurrency').value,target:$('goalTarget').value,saved:$('goalSaved').value,version:currentGoal?.version,request_id:goalRequestId})});$('goalDialog').close();await loadGoals();toast(t('saved'));}
+  try{await api('/api/goals'+(currentGoal?'/'+currentGoal.id:''),{method:currentGoal?'PUT':'POST',body:JSON.stringify({title:$('goalName').value,currency:$('goalCurrency').value,target:$('goalTarget').value,saved:$('goalSaved').value,target_date:$('goalTargetDate').value||null,version:currentGoal?.version,request_id:goalRequestId})});$('goalDialog').close();await loadGoals();toast(t('saved'));}
   catch(e){$('goalError').textContent=e.message;}
   finally{busy($('saveGoal'),false);$('deleteGoal').disabled=false;}
 };

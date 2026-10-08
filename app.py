@@ -79,7 +79,7 @@ savings_goals = Table('savings_goals', metadata,
     Column('id', Integer, primary_key=True), Column('user_id', BigInteger, nullable=False, index=True),
     Column('title', String(80), nullable=False), Column('currency', String(3), nullable=False),
     Column('target', BigInteger, nullable=False), Column('saved', BigInteger, nullable=False),
-    Column('archived', Integer, nullable=False, default=0),
+    Column('archived', Integer, nullable=False, default=0), Column('target_date', Date, nullable=True),
     Column('version', Integer, nullable=False, default=1), Column('request_id', String(64), nullable=False),
     UniqueConstraint('user_id','request_id'))
 savings_goal_entries = Table('savings_goal_entries', metadata,
@@ -209,6 +209,9 @@ def create_app(config=None):
     if 'archived' not in {column['name'] for column in inspect(engine).get_columns('savings_goals')}:
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE savings_goals ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'))
+    if 'target_date' not in {column['name'] for column in inspect(engine).get_columns('savings_goals')}:
+        with engine.begin() as conn:
+            conn.execute(text('ALTER TABLE savings_goals ADD COLUMN target_date DATE'))
     app.extensions['engine'] = engine
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
@@ -539,6 +542,8 @@ def create_app(config=None):
         result.pop('request_id', None)
         if 'day' in result:
             result['day'] = result['day'].isoformat()
+        if result.get('target_date') is not None:
+            result['target_date'] = result['target_date'].isoformat()
         return result
 
     @app.get('/api/data')
@@ -1225,6 +1230,17 @@ def create_app(config=None):
         for row in rows:
             goal=serialize(row)
             goal['remaining']=max(0,row['target']-row['saved'])
+            goal['monthly_needed']=None
+            if row['target_date'] and goal['remaining']>0:
+                today=datetime.now(TZ).date()
+                if row['target_date']>=today:
+                    months=max(1,(row['target_date'].year-today.year)*12+row['target_date'].month-today.month+1)
+                    goal['monthly_needed']=(goal['remaining']+months-1)//months
+                    goal['months_to_target']=months
+                else:
+                    goal['months_to_target']=0
+            else:
+                goal['months_to_target']=None
             goal['percent']=min(100,round(row['saved']*100/row['target']))
             recent_net=net_30_days.get(row['id'],0)
             goal['estimated_days']=max(1,(goal['remaining']*30+recent_net-1)//recent_net) if goal['remaining'] and recent_net>0 else None
@@ -1243,7 +1259,13 @@ def create_app(config=None):
         except DecimalException:
             zero = False
         saved = 0 if zero else amount_units(raw_saved,currency)
-        return dict(title=title.strip(),currency=currency,target=target,saved=saved)
+        raw_target_date=body.get('target_date') or None
+        target_date=None
+        if raw_target_date is not None:
+            try:target_date=date.fromisoformat(raw_target_date)
+            except (TypeError,ValueError):abort(400,'Enter a valid goal date.')
+            if target_date.year<2000:abort(400,'Enter a valid goal date.')
+        return dict(title=title.strip(),currency=currency,target=target,saved=saved,target_date=target_date)
 
     @app.post('/api/goals')
     @auth
@@ -1278,6 +1300,8 @@ def create_app(config=None):
             current=conn.execute(select(savings_goals).where(savings_goals.c.id==identity,savings_goals.c.user_id==g.user['id'])).mappings().first()
             if not current:
                 abort(404,'Goal not found')
+            if 'target_date' not in body:
+                values['target_date']=current['target_date']
             if current['currency'] != values['currency']:
                 abort(400,'Goal currency cannot change. Create a new goal instead.')
             changed=conn.execute(update(savings_goals).where(savings_goals.c.id==identity,

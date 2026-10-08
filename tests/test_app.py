@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 import pytest
 from app import create_app
@@ -563,13 +565,16 @@ def test_admin_status_does_not_expose_credentials(access_client):
     assert 'Known users:' in calls[-1][1]['text']
 
 def test_goals_ownership_precision_versions_and_idempotence(client):
-    data={'title':'Laptop','currency':'USD','target':'800','saved':'100.25','request_id':'goal-request-123'}
+    target_day=datetime.now(ZoneInfo('Asia/Phnom_Penh')).date()+timedelta(days=75)
+    data={'title':'Laptop','currency':'USD','target':'800','saved':'100.25','target_date':target_day.isoformat(),'request_id':'goal-request-123'}
     response=client.post('/api/goals',headers=headers(),json=data)
     assert response.status_code==201
     gid=response.json['id']
     assert client.post('/api/goals',headers=headers(),json=data).json['id']==gid
     goal=client.get('/api/goals',headers=headers()).json['goals'][0]
     assert goal['target']==80000 and goal['saved']==10025 and goal['version']==1
+    months=max(1,(target_day.year-datetime.now(ZoneInfo('Asia/Phnom_Penh')).year)*12+target_day.month-datetime.now(ZoneInfo('Asia/Phnom_Penh')).month+1)
+    assert goal['target_date']==target_day.isoformat() and goal['monthly_needed']==(69975+months-1)//months
     assert not client.get('/api/goals',headers=headers(uid=456)).json['goals']
     data.update(version=1,saved='200')
     assert client.put(f'/api/goals/{gid}',headers=headers(uid=456),json=data).status_code==404
