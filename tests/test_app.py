@@ -920,14 +920,51 @@ def test_personal_debts_crud_proof_photo_and_user_isolation(client):
     assert photo.status_code==200 and photo.mimetype=='image/jpeg'
     assert client.get(photo_url,headers=headers(uid=456)).status_code==404
     assert client.get('/api/debts?status=settled',headers=headers()).json['debts']==[]
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers()).status_code==409
+    payment=client.post(f'/api/debts/{identity}/payments',json={'amount':'25.50','paid_on':'2026-12-01'},headers=headers())
+    assert payment.status_code==201 and payment.json['remaining']==0
     assert client.put(f'/api/debts/{identity}/status',json={'status':'settled'},headers=headers()).status_code==200
     assert client.get('/api/debts?status=settled',headers=headers()).json['debts'][0]['settled_at']
-    assert client.put(f'/api/debts/{identity}/status',json={'status':'open'},headers=headers()).status_code==200
+    assert client.put(f'/api/debts/{identity}/status',json={'status':'open'},headers=headers()).status_code==409
+    assert client.delete(f'/api/debts/{identity}/payments/{payment.json["id"]}',headers=headers()).status_code==200
     actions=[event['action'] for event in client.get(f'/api/debts/{identity}/history',headers=headers()).json['events']]
-    assert 'settled' in actions and 'reopened' in actions and 'photo_attached' in actions
+    assert 'settled' in actions and 'reopened' in actions and 'photo_attached' in actions and 'payment_added' in actions and 'payment_deleted' in actions
     assert client.put(f'/api/debts/{identity}',json={**data,'person':'Sokha'},headers=headers()).status_code==200
     assert client.delete(f'/api/debts/{identity}',headers=headers(uid=456)).status_code==404
     assert client.delete(f'/api/debts/{identity}',headers=headers()).status_code==200
     assert client.get(photo_url,headers=headers()).status_code==404
     assert client.post('/api/debts',json={**data,'direction':'other'},headers=headers()).status_code==400
     assert client.post('/api/debts',json={**data,'person':' '},headers=headers()).status_code==400
+
+
+def test_debt_partial_repayments_crud_balance_and_audit_history(client):
+    data={'direction':'lent','person':'Sokha','amount':'25.50','currency':'USD','note':'Loan'}
+    debt=client.post('/api/debts',json=data,headers=headers()).json['id']
+    url=f'/api/debts/{debt}/payments'
+    first=client.post(url,json={'amount':'10.50','paid_on':'2026-10-01','note':'First'},headers=headers())
+    assert first.status_code==201 and first.json['remaining']==1500
+    payment_id=first.json['id']
+    assert client.put(f'/api/debts/{debt}',json={**data,'amount':'10.00'},headers=headers()).status_code==400
+    assert client.put(f'/api/debts/{debt}',json={**data,'currency':'KHR'},headers=headers()).status_code==400
+    assert client.post(url,json={'amount':'15.01','paid_on':'2026-10-02'},headers=headers()).status_code==400
+    assert client.post(url,json={'amount':'15.00','paid_on':'2026-10-02'},headers=headers(uid=456)).status_code==404
+    second=client.post(url,json={'amount':'15.00','paid_on':'2026-10-02','note':'Final'},headers=headers())
+    assert second.status_code==201 and second.json['remaining']==0
+    record=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert record['paid_total']==2550 and record['remaining']==0 and record['status']=='settled'
+    assert client.put(f'/api/debts/{debt}',json={**data,'amount':'26.00'},headers=headers()).status_code==200
+    record=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert record['remaining']==50 and record['status']=='open'
+    assert client.put(f'/api/debts/{debt}',json=data,headers=headers()).status_code==200
+    payment2=second.json['id']
+    edited=client.put(f'{url}/{payment2}',json={'amount':'14.00','paid_on':'2026-10-03','note':'Corrected'},headers=headers())
+    assert edited.status_code==200 and edited.json['remaining']==100
+    record=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert record['status']=='open' and record['remaining']==100
+    assert client.put(f'{url}/{payment2}',json={'amount':'15.01','paid_on':'2026-10-03'},headers=headers()).status_code==400
+    assert client.delete(f'{url}/{payment_id}',headers=headers(uid=456)).status_code==404
+    assert client.delete(f'{url}/{payment_id}',headers=headers()).json['remaining']==1150
+    record=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert record['paid_total']==1400 and record['remaining']==1150 and record['status']=='open'
+    actions=[event['action'] for event in client.get(f'/api/debts/{debt}/history',headers=headers()).json['events']]
+    assert 'payment_added' in actions and 'payment_updated' in actions and 'payment_deleted' in actions

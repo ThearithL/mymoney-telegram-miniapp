@@ -31,6 +31,8 @@ Object.assign(en,{confirmDeleteGoalTitle:'Delete this goal?',confirmDeleteGoalHe
 Object.assign(km,{confirmDeleteGoalTitle:'លុបគោលដៅនេះ?',confirmDeleteGoalHelp:'ការលុបនឹងលុបគោលដៅ និងប្រវត្តិសន្សំទាំងអស់ជាអចិន្ត្រៃយ៍។ មិនអាចស្ដារវិញបានទេ។',confirmDeleteGoal:'លុបជាអចិន្ត្រៃយ៍',cancel:'បោះបង់'});
 Object.assign(en,{monthSpentAverage:'Average spent per day',usedPercent:'used',budgetThresholdAlert:'Budget alert starts at 80%'});
 Object.assign(km,{monthSpentAverage:'ចំណាយមធ្យមក្នុងមួយថ្ងៃ',usedPercent:'បានប្រើ',budgetThresholdAlert:'ជូនដំណឹងចាប់ពីប្រើថវិកា 80%'});
+Object.assign(en,{spendingNone:'Unclassified'});
+Object.assign(km,{spendingNone:'មិនកំណត់'});
 
 Object.assign(en,{moreTools:'More personal tools',screenMode:'Mini App display size',screenModeDevice:'Follow Telegram/device',screenModeFull:'Fullscreen',screenModeNormal:'Normal (not fullscreen)',fullscreenHelp:'Choose how the Mini App fits your screen. Your choice is saved on this device.',fullscreenUnsupported:'Fullscreen is not supported by this Telegram client; choose device or normal mode.',fullscreenFailed:'Telegram could not change the fullscreen mode.'});
 Object.assign(km,{moreTools:'ឧបករណ៍ផ្ទាល់ខ្លួនបន្ថែម',screenMode:'ទំហំបង្ហាញ Mini App',screenModeDevice:'តាម Telegram/ឧបករណ៍',screenModeFull:'ពេញអេក្រង់',screenModeNormal:'ទំហំធម្មតា (មិនពេញអេក្រង់)',fullscreenHelp:'ជ្រើសរបៀបបង្ហាញ App។ ជម្រើសនេះត្រូវបានរក្សាទុកក្នុងឧបករណ៍នេះ។',fullscreenUnsupported:'Telegram នេះមិនគាំទ្រពេញអេក្រង់ទេ។ សូមជ្រើសតាមឧបករណ៍ ឬទំហំធម្មតា។',fullscreenFailed:'Telegram មិនអាចប្ដូរទំហំអេក្រង់បានទេ។'});

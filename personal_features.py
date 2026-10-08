@@ -17,6 +17,7 @@ def define_tables(metadata):
       'debts':Table('personal_debts',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('direction',String(8),nullable=False),Column('person',String(80),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('note',String(300),nullable=False),Column('due_date',Date,nullable=True),Column('created_at',Date,nullable=False),Column('status',String(10),nullable=False),Column('settled_at',Date,nullable=True)),
       'debt_photos':Table('personal_debt_photos',metadata,Column('debt_id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('data',LargeBinary,nullable=False)),
       'debt_events':Table('personal_debt_history',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('debt_id',Integer,nullable=False,index=True),Column('action',String(20),nullable=False),Column('details',Text,nullable=False),Column('created_at',BigInteger,nullable=False)),
+      'debt_payments':Table('personal_debt_payments',metadata,Column('id',Integer,primary_key=True),Column('debt_id',Integer,nullable=False,index=True),Column('user_id',BigInteger,nullable=False,index=True),Column('amount',BigInteger,nullable=False),Column('paid_on',Date,nullable=False),Column('note',String(300),nullable=False),Column('created_at',BigInteger,nullable=False)),
       'favorites':Table('expense_favorites',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('title',String(60),nullable=False),Column('kind',String(10),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('account',String(20),nullable=False),Column('note',String(300),nullable=False)),
       'category_budgets':Table('category_budgets',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),Column('category',String(20),nullable=False),Column('amount',BigInteger,nullable=False),UniqueConstraint('user_id','month','currency','category'))}
 
@@ -26,7 +27,7 @@ def archive_rows(conn,rows,tables):
         conn.execute(insert(tables['trash']).values(user_id=data['user_id'],snapshot=json.dumps(data),request_id=data['request_id'],deleted_at=int(time.time())))
 
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
-    trash,photos,profiles,limits,favorites,fx,custom_categories,debts,debt_photos,debt_events=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories','debts','debt_photos','debt_events'])
+    trash,photos,profiles,limits,favorites,fx,custom_categories,debts,debt_photos,debt_events,debt_payments=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories','debts','debt_photos','debt_events','debt_payments'])
     def category_allowed(key,kind=None):
         if not isinstance(key,str):return False
         if key in categories:
@@ -237,6 +238,22 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         if extra:details.update(extra)
         conn.execute(insert(debt_events).values(user_id=g.user['id'],debt_id=identity,action=action,details=json.dumps(details,ensure_ascii=False),created_at=int(time.time())))
 
+    def payment_fields(body,currency):
+        raw_date=body.get('paid_on') or datetime.now(TZ).date().isoformat();note=body.get('note','')
+        if not isinstance(note,str) or len(note)>300:abort(400,'Payment note must be 300 characters or less.')
+        try:paid_on=date.fromisoformat(raw_date)
+        except (TypeError,ValueError):abort(400,'Enter a valid payment date.')
+        if paid_on.year<2000:abort(400,'Enter a valid payment date.')
+        return {'amount':amount_units(body.get('amount'),currency),'paid_on':paid_on,'note':note.strip()}
+
+    def debt_paid_total(conn,identity,exclude_payment_id=None):
+        query=select(func.coalesce(func.sum(debt_payments.c.amount),0)).where(debt_payments.c.debt_id==identity,debt_payments.c.user_id==g.user['id'])
+        if exclude_payment_id is not None:query=query.where(debt_payments.c.id!=exclude_payment_id)
+        return int(conn.execute(query).scalar_one())
+
+    def serialize_payment(row):
+        return {'id':row['id'],'amount':row['amount'],'paid_on':row['paid_on'].isoformat(),'note':row['note'],'created_at':row['created_at']}
+
     @app.get('/api/debts')
     @auth
     def debts_get():
@@ -248,9 +265,13 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         with engine.connect() as conn:
             rows=conn.execute(query).mappings().all()
             photo_ids=set(conn.execute(select(debt_photos.c.debt_id).where(debt_photos.c.user_id==g.user['id'])).scalars().all())
+            debt_ids=[row['id'] for row in rows]
+            payment_rows=conn.execute(select(debt_payments).where(debt_payments.c.user_id==g.user['id'],debt_payments.c.debt_id.in_(debt_ids)).order_by(debt_payments.c.paid_on.desc(),debt_payments.c.id.desc())).mappings().all() if debt_ids else []
+        payments_by_debt={}
+        for payment in payment_rows:payments_by_debt.setdefault(payment['debt_id'],[]).append(serialize_payment(payment))
         result=[]
         for row in rows:
-            item=dict(row);item['due_date']=item['due_date'].isoformat() if item['due_date'] else None;item['created_at']=item['created_at'].isoformat();item['settled_at']=item['settled_at'].isoformat() if item['settled_at'] else None;item['has_photo']=item['id'] in photo_ids;result.append(item)
+            item=dict(row);item['due_date']=item['due_date'].isoformat() if item['due_date'] else None;item['created_at']=item['created_at'].isoformat();item['settled_at']=item['settled_at'].isoformat() if item['settled_at'] else None;item['has_photo']=item['id'] in photo_ids;item['payments']=payments_by_debt.get(item['id'],[]);item['paid_total']=sum(p['amount'] for p in item['payments']);item['remaining']=max(0,item['amount']-item['paid_total']);result.append(item)
         return {'debts':result}
 
     @app.post('/api/debts')
@@ -268,9 +289,14 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         values=debt_fields(json_body())
         with engine.begin() as conn:
             row=owned_debt(conn,identity)
+            paid=debt_paid_total(conn,identity)
+            if paid and values['currency']!=row['currency']:abort(400,'Currency cannot be changed after repayments are recorded. Delete the repayments first if they were entered by mistake.')
+            if values['amount']<paid:abort(400,'Debt amount cannot be lower than the repayments already recorded.')
             before=dict(row);after=before|values;changed=[key for key,value in values.items() if before[key]!=value]
+            if paid and values['amount']==paid and before['status']!='settled':after.update(status='settled',settled_at=datetime.now(TZ).date());changed.extend(['status','settled_at'])
+            elif paid and values['amount']>paid and before['status']=='settled':after.update(status='open',settled_at=None);changed.extend(['status','settled_at'])
             if changed:
-                conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(**values))
+                conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(**{key:after[key] for key in changed}))
                 add_debt_event(conn,identity,'updated',before=before,after=after,changed_fields=changed)
         return {'id':identity,'status':row['status']}
 
@@ -280,13 +306,72 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         status=json_body().get('status')
         if status not in ('open','settled'):abort(400,'Choose open or settled status.')
         with engine.begin() as conn:
-            row=owned_debt(conn,identity);before=dict(row)
+            row=owned_debt(conn,identity);before=dict(row);paid=debt_paid_total(conn,identity);remaining=int(row['amount'])-paid
+            if status=='settled' and remaining>0:abort(409,'Record repayments until the remaining balance is zero before settling this debt.')
+            if status=='open' and remaining==0:abort(409,'This debt is fully repaid. Edit or remove a repayment to reopen its balance.')
             settled_at=datetime.now(TZ).date() if status=='settled' else None
             if before['status']!=status:
                 after=before|{'status':status,'settled_at':settled_at}
                 conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status=status,settled_at=settled_at))
                 add_debt_event(conn,identity,'settled' if status=='settled' else 'reopened',before=before,after=after,changed_fields=['status','settled_at'])
         return {'ok':True,'status':status}
+
+    @app.post('/api/debts/<int:identity>/payments')
+    @auth
+    def debt_payment_add(identity):
+        body=json_body()
+        with engine.begin() as conn:
+            debt=owned_debt(conn,identity);values=payment_fields(body,debt['currency']);paid=debt_paid_total(conn,identity)
+            if values['amount']>int(debt['amount'])-paid:abort(400,'Payment cannot exceed the remaining balance.')
+            now=int(time.time());payment_id=conn.execute(insert(debt_payments).values(debt_id=identity,user_id=g.user['id'],**values,created_at=now)).inserted_primary_key[0]
+            payment_after={'id':payment_id,'amount':values['amount'],'paid_on':values['paid_on'].isoformat(),'note':values['note'],'created_at':now}
+            add_debt_event(conn,identity,'payment_added',after=debt,extra={'payment':payment_after})
+            new_paid=paid+values['amount'];remaining=int(debt['amount'])-new_paid
+            if remaining>0 and debt['status']=='settled':
+                conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status='open',settled_at=None))
+                add_debt_event(conn,identity,'reopened',before=debt,after=dict(debt)|{'status':'open','settled_at':None},changed_fields=['status','settled_at'],extra={'reason':'repayment_added'})
+            elif remaining==0 and debt['status']!='settled':
+                settled_at=datetime.now(TZ).date();after=dict(debt)|{'status':'settled','settled_at':settled_at}
+                conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status='settled',settled_at=settled_at))
+                add_debt_event(conn,identity,'settled',before=debt,after=after,changed_fields=['status','settled_at'])
+        return {'ok':True,'id':payment_id,'remaining':remaining},201
+
+    @app.put('/api/debts/<int:identity>/payments/<int:payment_id>')
+    @auth
+    def debt_payment_update(identity,payment_id):
+        body=json_body()
+        with engine.begin() as conn:
+            debt=owned_debt(conn,identity);payment=conn.execute(select(debt_payments).where(debt_payments.c.id==payment_id,debt_payments.c.debt_id==identity,debt_payments.c.user_id==g.user['id'])).mappings().first()
+            if payment is None:abort(404,'Repayment not found.')
+            values=payment_fields(body,debt['currency']);paid_without=debt_paid_total(conn,identity,payment_id)
+            if values['amount']>int(debt['amount'])-paid_without:abort(400,'Payment cannot exceed the remaining balance.')
+            before=dict(payment);changed=[key for key,value in values.items() if before[key]!=value]
+            if changed:
+                conn.execute(update(debt_payments).where(debt_payments.c.id==payment_id,debt_payments.c.debt_id==identity,debt_payments.c.user_id==g.user['id']).values(**values))
+                after=before|values
+                add_debt_event(conn,identity,'payment_updated',extra={'payment_before':{**before,'paid_on':before['paid_on'].isoformat()},'payment_after':{**after,'paid_on':after['paid_on'].isoformat()},'changed_fields':changed})
+            total=paid_without+values['amount'];remaining=int(debt['amount'])-total
+            if remaining>0 and debt['status']=='settled':
+                conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status='open',settled_at=None))
+                add_debt_event(conn,identity,'reopened',before=debt,after=dict(debt)|{'status':'open','settled_at':None},changed_fields=['status','settled_at'],extra={'reason':'repayment_edited'})
+            elif remaining==0 and debt['status']=='open':
+                settled_at=datetime.now(TZ).date();conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status='settled',settled_at=settled_at))
+                add_debt_event(conn,identity,'settled',before=debt,after=dict(debt)|{'status':'settled','settled_at':settled_at},changed_fields=['status','settled_at'])
+        return {'ok':True,'remaining':remaining}
+
+    @app.delete('/api/debts/<int:identity>/payments/<int:payment_id>')
+    @auth
+    def debt_payment_remove(identity,payment_id):
+        with engine.begin() as conn:
+            debt=owned_debt(conn,identity);payment=conn.execute(select(debt_payments).where(debt_payments.c.id==payment_id,debt_payments.c.debt_id==identity,debt_payments.c.user_id==g.user['id'])).mappings().first()
+            if payment is None:abort(404,'Repayment not found.')
+            before=dict(payment);conn.execute(delete(debt_payments).where(debt_payments.c.id==payment_id,debt_payments.c.debt_id==identity,debt_payments.c.user_id==g.user['id']))
+            add_debt_event(conn,identity,'payment_deleted',extra={'payment':{**before,'paid_on':before['paid_on'].isoformat()}})
+            remaining=int(debt['amount'])-debt_paid_total(conn,identity)
+            if remaining>0 and debt['status']=='settled':
+                conn.execute(update(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']).values(status='open',settled_at=None))
+                add_debt_event(conn,identity,'reopened',before=debt,after=dict(debt)|{'status':'open','settled_at':None},changed_fields=['status','settled_at'],extra={'reason':'repayment_deleted'})
+        return {'ok':True,'remaining':remaining}
 
     @app.delete('/api/debts/<int:identity>')
     @auth
@@ -295,6 +380,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             owned_debt(conn,identity)
             conn.execute(delete(debt_photos).where(debt_photos.c.debt_id==identity,debt_photos.c.user_id==g.user['id']))
             conn.execute(delete(debt_events).where(debt_events.c.debt_id==identity,debt_events.c.user_id==g.user['id']))
+            conn.execute(delete(debt_payments).where(debt_payments.c.debt_id==identity,debt_payments.c.user_id==g.user['id']))
             conn.execute(delete(debts).where(debts.c.id==identity,debts.c.user_id==g.user['id']))
         return {'ok':True}
 
