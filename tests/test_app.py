@@ -61,7 +61,8 @@ def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch
     # Stub its encoder here so this test remains offline-friendly.
     import sys,types
     from PIL import Image
-    monkeypatch.setitem(sys.modules,'qrcode',types.SimpleNamespace(make=lambda _payload:Image.new('RGB',(21,21),'black')))
+    encoded=[]
+    monkeypatch.setitem(sys.modules,'qrcode',types.SimpleNamespace(make=lambda payload:(encoded.append(payload) or Image.new('RGB',(21,21),'black'))))
     created=client.post('/api/transactions',json=payload(),headers=headers())
     identity=created.json['id']
     assert client.get(f'/api/transactions/{identity}/qr').status_code==401
@@ -71,6 +72,14 @@ def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch
     assert response.mimetype=='image/png'
     assert response.data.startswith(b'\x89PNG\r\n\x1a\n')
     assert response.headers['Cache-Control']=='no-store'
+    from urllib.parse import urlparse
+    image_url=urlparse(encoded[-1])
+    image=client.get(image_url.path)
+    assert image.status_code==200 and image.mimetype=='image/svg+xml'
+    assert 'កំណត់ត្រាចំណាយផ្ទាល់ខ្លួន' in image.get_data(as_text=True)
+    assert '$12.34' in image.get_data(as_text=True)
+    assert image.headers['Content-Disposition'].startswith('inline;')
+    assert client.get('/shared/record/not-a-valid-signature.svg').status_code==404
 
 @pytest.mark.parametrize('amount,currency', [('0','USD'),('-1','KHR'),('1.001','USD'),('1.1','KHR'),('NaN','USD'),('Infinity','USD'),('100','EUR')])
 def test_rejects_invalid_money(client,amount,currency):

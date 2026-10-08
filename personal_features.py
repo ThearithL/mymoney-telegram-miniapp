@@ -3,6 +3,7 @@ import io,json,time,uuid,warnings
 from datetime import date,datetime
 from zoneinfo import ZoneInfo
 from flask import abort,g,request,Response
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from sqlalchemy import Table,Column,Integer,BigInteger,String,Text,LargeBinary,Numeric,Date,UniqueConstraint,select,insert,delete,update,func
 from PIL import Image,ImageOps,UnidentifiedImageError
 TZ=ZoneInfo('Asia/Phnom_Penh')
@@ -158,30 +159,68 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @app.get('/api/transactions/<int:identity>/qr')
     @auth
     def get_transaction_qr(identity):
-        # QR contains a small, self-contained summary, not a payment address or a
-        # public URL. Ownership is checked before any record data is encoded.
+        # The QR opens a read-only receipt image. The signed URL acts as a
+        # bearer link, so the image only includes the minimum receipt fields.
         with engine.connect() as conn:
             row=owned_entry(conn,identity)
-        amount_text=(f"{row['amount']//100}.{row['amount']%100:02d}"
-                     if row['currency']=='USD' else str(row['amount']))
-        payload={
-            'type':'MYMONEY_PERSONAL_RECORD',
-            'id':row['id'],
-            'kind':row['kind'],
-            'amount':amount_text,
-            'currency':row['currency'],
-            'date':row['day'].isoformat(),
-            'category':row['category'],
-            'account':row['account'],
-        }
+        signer=URLSafeTimedSerializer(app.secret_key,salt='mymoney-personal-record-image-v1')
+        token=signer.dumps({'user_id':int(row['user_id']),'record_id':int(row['id'])})
+        base_url=app.config['APP_URL'] or request.url_root.rstrip('/')
+        payload_url=f'{base_url}/shared/record/{token}.svg'
         try:
             import qrcode
-            image=qrcode.make(json.dumps(payload,separators=(',',':'),ensure_ascii=False))
+            image=qrcode.make(payload_url)
             output=io.BytesIO();image.save(output,format='PNG')
         except ImportError:
             abort(503,'QR code support is not installed.')
         return Response(output.getvalue(),mimetype='image/png',headers={
             'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+        })
+
+    @app.get('/shared/record/<token>.svg')
+    def shared_record_image(token):
+        signer=URLSafeTimedSerializer(app.secret_key,salt='mymoney-personal-record-image-v1')
+        try:
+            claims=signer.loads(token,max_age=365*24*60*60)
+            user_id=int(claims['user_id']);record_id=int(claims['record_id'])
+        except (BadSignature,SignatureExpired,KeyError,TypeError,ValueError):
+            abort(404,'Record image not found.')
+        with engine.connect() as conn:
+            row=conn.execute(select(transactions).where(
+                transactions.c.id==record_id,transactions.c.user_id==user_id)).mappings().first()
+        if row is None:abort(404,'Record image not found.')
+
+        # Use SVG text, rendered by the scanner's browser, so Khmer glyphs stay
+        # readable without requiring a particular font on the Render server.
+        from xml.sax.saxutils import escape
+        currency=row['currency']
+        amount=(f"${row['amount']//100}.{row['amount']%100:02d}"
+                if currency=='USD' else f"៛{row['amount']:,}")
+        category_labels={'food':'អាហារ','coffee':'កាហ្វេ','transport':'ធ្វើដំណើរ',
+            'shopping':'ទិញទំនិញ','bills':'វិក្កយបត្រ','study':'ការសិក្សា',
+            'health':'សុខភាព','other':'ផ្សេងៗ','salary':'ប្រាក់ខែ'}
+        category=category_labels.get(row['category'],row['category'])
+        kind_title='កំណត់ត្រាចំណូលផ្ទាល់ខ្លួន' if row['kind']=='income' else 'កំណត់ត្រាចំណាយផ្ទាល់ខ្លួន'
+        account='សាច់ប្រាក់' if row['account']=='cash' else 'ធនាគារ'
+        details=[('លេខកំណត់ត្រា',f"#{row['id']}"),('ថ្ងៃ',row['day'].isoformat()),
+                 ('ប្រភេទ',category),('គណនី',account)]
+        detail_svg=''.join(
+            f'<g><text class="label" x="92" y="{490+i*96}">{escape(label)}</text>'
+            f'<text class="value" x="688" y="{490+i*96}" text-anchor="end">{escape(str(value))}</text>'
+            f'<path d="M92 {518+i*96}h596" class="rule"/></g>'
+            for i,(label,value) in enumerate(details))
+        svg=f'''<svg xmlns="http://www.w3.org/2000/svg" width="780" height="930" viewBox="0 0 780 930" role="img" aria-labelledby="title desc">
+<title id="title">{escape(kind_title)}</title><desc id="desc">{escape(amount)} · {escape(row['day'].isoformat())}</desc>
+<style>text{{font-family:"Noto Sans Khmer","Battambang",system-ui,sans-serif;fill:#17352a}}.title{{font-size:27px;font-weight:700}}.subtitle{{font-size:16px;fill:#70847b}}.amount{{font-size:54px;font-weight:750}}.label{{font-size:17px;fill:#70847b}}.value{{font-size:18px;font-weight:650}}.rule{{stroke:#e4ebe6;stroke-width:2}}</style>
+<rect width="780" height="930" rx="42" fill="#eef4ef"/><rect x="34" y="34" width="712" height="862" rx="34" fill="#fff" stroke="#dce8df" stroke-width="2"/>
+<circle cx="390" cy="142" r="42" fill="#dff2e7"/><path d="m371 143 13 13 27-31" fill="none" stroke="#23845c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<text class="title" x="390" y="230" text-anchor="middle">{escape(kind_title)}</text><text class="subtitle" x="390" y="270" text-anchor="middle">MYMONEY · PERSONAL</text>
+<text class="amount" x="390" y="382" text-anchor="middle">{escape(amount)}</text><path d="M92 426h596" stroke="#d9e5dd" stroke-width="2" stroke-dasharray="8 8"/>{detail_svg}
+<text class="subtitle" x="390" y="850" text-anchor="middle">កំណត់ត្រាផ្ទាល់ខ្លួន · មិនមែនជាបង្កាន់ដៃចេញពីហាង</text></svg>'''
+        return Response(svg,mimetype='image/svg+xml',headers={
+            'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
+            'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'",
+            'Content-Disposition':'inline; filename="mymoney-personal-record.svg"',
         })
 
     @app.put('/api/transactions/<int:identity>/photo')
