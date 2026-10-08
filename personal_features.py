@@ -147,6 +147,26 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             conn.execute(delete(photos).where(photos.c.user_id==g.user['id'],photos.c.request_id==data['request_id']))
         return {'ok':True}
 
+    @app.delete('/api/trash')
+    @auth
+    def purge_all_trash():
+        if json_body().get('confirmation') != 'DELETE':
+            abort(400, 'Confirmation required')
+        uid=g.user['id']
+        with engine.begin() as conn:
+            snapshots=conn.execute(select(trash.c.snapshot).where(trash.c.user_id==uid)).scalars().all()
+            request_ids=[]
+            for snapshot in snapshots:
+                try:
+                    request_id=json.loads(snapshot).get('request_id')
+                    if isinstance(request_id,str):request_ids.append(request_id)
+                except (TypeError,ValueError):
+                    continue
+            if request_ids:
+                conn.execute(delete(photos).where(photos.c.user_id==uid,photos.c.request_id.in_(request_ids)))
+            deleted=conn.execute(delete(trash).where(trash.c.user_id==uid)).rowcount or 0
+        return {'ok':True,'deleted':deleted}
+
     @app.get('/api/transactions/<int:identity>/photo')
     @auth
     def get_photo(identity):

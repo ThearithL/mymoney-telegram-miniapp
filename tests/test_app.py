@@ -75,6 +75,20 @@ def test_expense_items_are_saved_and_must_match_total(client):
     assert client.post('/api/transactions',json=invalid_qty,headers=headers()).status_code==400
 
 
+def test_empty_trash_permanently_removes_only_callers_entries(client):
+    first=client.post('/api/transactions',json=payload(request_id='trash-first-123'),headers=headers())
+    second=client.post('/api/transactions',json=payload(request_id='trash-second-123'),headers=headers())
+    other=client.post('/api/transactions',json=payload(request_id='trash-other-123'),headers=headers(uid=456))
+    assert first.status_code==second.status_code==other.status_code==201
+    for response,uid in ((first,123),(second,123),(other,456)):
+        assert client.delete(f"/api/transactions/{response.json['id']}",headers=headers(uid=uid)).status_code==200
+    assert client.delete('/api/trash',json={'confirmation':'NO'},headers=headers()).status_code==400
+    deleted=client.delete('/api/trash',json={'confirmation':'DELETE'},headers=headers())
+    assert deleted.status_code==200 and deleted.json['deleted']==2
+    assert client.get('/api/trash',headers=headers()).json['total']==0
+    assert client.get('/api/trash',headers=headers(uid=456)).json['total']==1
+
+
 def test_personal_record_qr_is_authenticated_and_owner_scoped(client,monkeypatch):
     # The runtime dependency is installed from requirements.txt in deployment.
     # Stub its encoder here so this test remains offline-friendly.
