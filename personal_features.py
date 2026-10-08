@@ -213,8 +213,8 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         return {'ok':True}
 
     def debt_fields(body):
-        direction=body.get('direction');person=body.get('person');currency=body.get('currency');note=body.get('note','');raw_due=body.get('due_date') or None
-        if direction not in ('borrowed','lent') or not isinstance(person,str) or not 1<=len(person.strip())<=80 or not isinstance(note,str) or len(note)>300:abort(400,'Check the person, direction and note (up to 300 characters).')
+        direction=body.get('direction');person=body.get('person','');currency=body.get('currency');note=body.get('note','');raw_due=body.get('due_date') or None
+        if direction not in ('borrowed','lent') or not isinstance(person,str) or len(person.strip())>80 or not isinstance(note,str) or len(note)>300:abort(400,'Check the direction and note (up to 300 characters).')
         due_date=None
         if raw_due is not None:
             try:due_date=date.fromisoformat(raw_due)

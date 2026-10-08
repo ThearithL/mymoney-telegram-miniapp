@@ -936,6 +936,13 @@ def test_personal_debts_crud_proof_photo_and_user_isolation(client):
     assert client.post('/api/debts',json={**data,'direction':'other'},headers=headers()).status_code==400
     assert client.post('/api/debts',json={**data,'person':' '},headers=headers()).status_code==400
 
+def test_personal_debt_can_be_created_without_associated_person(client):
+    data={'direction':'borrowed','amount':'15','currency':'USD','note':'Book purchase'}
+    response=client.post('/api/debts',json=data,headers=headers())
+    assert response.status_code==201
+    saved=client.get('/api/debts',headers=headers()).json['debts'][0]
+    assert saved['person']=='' and saved['note']=='Book purchase'
+
 
 def test_debt_partial_repayments_crud_balance_and_audit_history(client):
     data={'direction':'lent','person':'Sokha','amount':'25.50','currency':'USD','note':'Loan'}
