@@ -338,12 +338,6 @@ $('deleteGoal').onclick=async()=>{
   finally{busy($('deleteGoal'),false);$('saveGoal').disabled=false;}
 };
 $('theme').onchange=()=>{appTheme=$('theme').value;try{localStorage.setItem('mymoney-theme',appTheme);}catch{}applyTheme();};
-let appWallpaper='default';
-try{appWallpaper=localStorage.getItem('mymoney-wallpaper')||'default';}catch{}
-if(!['default','meadow','sunset','lavender','ocean'].includes(appWallpaper))appWallpaper='default';
-function applyWallpaper(){document.body.dataset.wallpaper=appWallpaper;const control=$('wallpaper');if(control)control.value=appWallpaper;}
-$('wallpaper').onchange=()=>{appWallpaper=$('wallpaper').value;try{localStorage.setItem('mymoney-wallpaper',appWallpaper);}catch{}applyWallpaper();};
-applyWallpaper();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);applyTheme();
 function supportsTelegramFullscreen(){try{return !!(tg?.initData&&tg.isVersionAtLeast('8.0')&&typeof tg.requestFullscreen==='function'&&typeof tg.exitFullscreen==='function');}catch{return false;}}
 function syncFullscreenControl(statusKey=null){$('screenMode').value=screenMode;$('fullscreenStatus').textContent=t(statusKey||(screenMode==='fullscreen'&&!supportsTelegramFullscreen()?'fullscreenUnsupported':'fullscreenHelp'));}
