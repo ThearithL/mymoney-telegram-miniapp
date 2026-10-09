@@ -406,3 +406,13 @@ if (tg?.initData) {
 } else {
   bootDone();notify(t('openTelegram'));
 }
+
+Object.assign(en,{wallpaper:'Wallpaper',wallpaperDefault:'Original',wallpaperMeadow:'Green meadow',wallpaperSunset:'Sunset',wallpaperLavender:'Lavender',wallpaperOcean:'Ocean',wallpaperHelp:'Choose a soft background. This preference is saved on this device only.'});
+Object.assign(km,{wallpaper:'ផ្ទៃខាងក្រោយ',wallpaperDefault:'រូបរាងដើម',wallpaperMeadow:'សួនបៃតង',wallpaperSunset:'ថ្ងៃលិច',wallpaperLavender:'ផ្កាឡាវេនឌ័រ',wallpaperOcean:'សមុទ្រ',wallpaperHelp:'ជ្រើសផ្ទៃខាងក្រោយទន់ៗ។ ការកំណត់នេះរក្សាទុកលើឧបករណ៍នេះប៉ុណ្ណោះ។'});
+
+let appWallpaper='default';
+try{appWallpaper=localStorage.getItem('mymoney-wallpaper')||'default';}catch{}
+if(!['default','meadow','sunset','lavender','ocean'].includes(appWallpaper))appWallpaper='default';
+function applyWallpaper(){document.body.dataset.wallpaper=appWallpaper;$('wallpaper').value=appWallpaper;}
+$('wallpaper').onchange=()=>{appWallpaper=$('wallpaper').value;try{localStorage.setItem('mymoney-wallpaper',appWallpaper);}catch{}applyWallpaper();};
+applyWallpaper();
