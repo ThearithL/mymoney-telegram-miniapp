@@ -13,6 +13,7 @@ def define_tables(metadata):
       'trash':Table('transaction_trash',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('snapshot',Text,nullable=False),Column('request_id',String(64),nullable=False),Column('deleted_at',BigInteger,nullable=False),UniqueConstraint('user_id','request_id')),
       'photos':Table('receipt_photos',metadata,Column('user_id',BigInteger,primary_key=True),Column('request_id',String(64),primary_key=True),Column('data',LargeBinary,nullable=False)),
       'profiles':Table('personal_profiles',metadata,Column('user_id',BigInteger,primary_key=True),Column('name',String(80),nullable=False),Column('bio',String(160),nullable=False)),
+      'profile_photos':Table('personal_profile_photos',metadata,Column('user_id',BigInteger,primary_key=True),Column('data',LargeBinary,nullable=False)),
       'fx':Table('currency_display_settings',metadata,Column('user_id',BigInteger,primary_key=True),Column('base_currency',String(3),nullable=False),Column('rate_khr_per_usd',Numeric(12,4),nullable=False)),
       'custom_categories':Table('custom_categories',metadata,Column('user_id',BigInteger,primary_key=True),Column('key',String(20),primary_key=True),Column('name',String(40),nullable=False),Column('kind',String(10),nullable=False),Column('icon',String(12),nullable=False,server_default='✨')),
       'debts':Table('personal_debts',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('direction',String(8),nullable=False),Column('person',String(80),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('note',String(300),nullable=False),Column('due_date',Date,nullable=True),Column('created_at',Date,nullable=False),Column('status',String(10),nullable=False),Column('settled_at',Date,nullable=True)),
@@ -28,7 +29,7 @@ def archive_rows(conn,rows,tables):
         conn.execute(insert(tables['trash']).values(user_id=data['user_id'],snapshot=json.dumps(data),request_id=data['request_id'],deleted_at=int(time.time())))
 
 def register_features(app,engine,transactions,tables,auth,json_body,amount_units,month_value,categories):
-    trash,photos,profiles,limits,favorites,fx,custom_categories,debts,debt_photos,debt_events,debt_payments=(tables[k] for k in ['trash','photos','profiles','category_budgets','favorites','fx','custom_categories','debts','debt_photos','debt_events','debt_payments'])
+    trash,photos,profiles,profile_photos,limits,favorites,fx,custom_categories,debts,debt_photos,debt_events,debt_payments=(tables[k] for k in ['trash','photos','profiles','profile_photos','category_budgets','favorites','fx','custom_categories','debts','debt_photos','debt_events','debt_payments'])
     def category_allowed(key,kind=None):
         if not isinstance(key,str):return False
         if key in categories:
@@ -63,6 +64,38 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         if not isinstance(name,str) or not 1<=len(name.strip())<=80 or not isinstance(bio,str) or len(bio)>160:abort(400,'Name: 1–80 characters; bio: up to 160.')
         values={'user_id':g.user['id'],'name':name.strip(),'bio':bio.strip()}
         with engine.begin() as conn:conn.execute(upsert(profiles).values(**values).on_conflict_do_update(index_elements=['user_id'],set_={'name':values['name'],'bio':values['bio']}))
+        return {'ok':True}
+
+    @app.get('/api/profile/photo')
+    @auth
+    def profile_photo_get():
+        with engine.connect() as conn:
+            data=conn.execute(select(profile_photos.c.data).where(profile_photos.c.user_id==g.user['id'])).scalar_one_or_none()
+        if data is None:abort(404,'No profile photo')
+        return Response(data,mimetype='image/jpeg',headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+
+    @app.put('/api/profile/photo')
+    @auth
+    def profile_photo_put():
+        raw=request.get_data()
+        if not raw or len(raw)>2*1024*1024:abort(400,'Choose a JPEG, PNG or WebP photo up to 2 MB.')
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('error',Image.DecompressionBombWarning)
+                with Image.open(io.BytesIO(raw)) as source:
+                    if source.format not in ('JPEG','PNG','WEBP') or getattr(source,'is_animated',False) or source.width*source.height>20_000_000:raise ValueError()
+                    source.load();photo=ImageOps.exif_transpose(source).convert('RGB');photo.thumbnail((512,512))
+                    output=io.BytesIO();photo.save(output,format='JPEG',quality=84,optimize=True)
+        except (UnidentifiedImageError,OSError,ValueError,Image.DecompressionBombError,Image.DecompressionBombWarning):abort(400,'Invalid image. Use a non-animated JPEG, PNG or WebP up to 20 megapixels.')
+        data=output.getvalue()
+        with engine.begin() as conn:
+            conn.execute(upsert(profile_photos).values(user_id=g.user['id'],data=data).on_conflict_do_update(index_elements=['user_id'],set_={'data':data}))
+        return {'ok':True}
+
+    @app.delete('/api/profile/photo')
+    @auth
+    def profile_photo_delete():
+        with engine.begin() as conn:conn.execute(delete(profile_photos).where(profile_photos.c.user_id==g.user['id']))
         return {'ok':True}
 
     @app.get('/api/categories')

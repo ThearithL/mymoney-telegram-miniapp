@@ -881,6 +881,21 @@ def test_profile_persists_and_is_owner_scoped(client):
     assert client.put('/api/profile',json={'name':'A'*81},headers=headers()).status_code==400
 
 
+def test_profile_photo_is_private_validated_and_removable(client):
+    output=io.BytesIO()
+    Image.new('RGB',(24,24),(32,120,88)).save(output,format='PNG')
+    raw=output.getvalue()
+    assert client.get('/api/profile/photo',headers=headers()).status_code==404
+    uploaded=client.put('/api/profile/photo',data=raw,headers={**headers(),'Content-Type':'image/png'})
+    assert uploaded.status_code==200
+    photo=client.get('/api/profile/photo',headers=headers())
+    assert photo.status_code==200 and photo.mimetype=='image/jpeg'
+    assert client.get('/api/profile/photo',headers=headers(456)).status_code==404
+    assert client.put('/api/profile/photo',data=b'not an image',headers=headers()).status_code==400
+    assert client.delete('/api/profile/photo',headers=headers()).status_code==200
+    assert client.get('/api/profile/photo',headers=headers()).status_code==404
+
+
 def test_category_limits_and_comparison_after_restore(client):
     a=payload();identity=client.post('/api/transactions',json=a,headers=headers()).json['id']
     b={**a,'amount':'10','day':'2025-12-10','request_id':'previous-month-test'}
