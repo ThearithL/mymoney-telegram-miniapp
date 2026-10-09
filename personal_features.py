@@ -549,14 +549,14 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @app.get('/api/fx/market-rate')
     @auth
     def fx_market_rate():
-        """Return ACLEDA's latest bank USD/KHR sell (ask) rate for converting USD to KHR."""
+        """Return only ACLEDA's current USD/KHR sell (ask) rate."""
         url='https://www.acledabank.com.kh/assets/unity/exchangerate'
-        try:
-            response=requests.get(url,headers={'Accept':'text/html','User-Agent':'MyMoney-Personal-App/1.0'},timeout=8)
-            response.raise_for_status()
-            html=response.text
-        except requests.RequestException:
-            abort(502,'Could not fetch the latest ACLEDA bank rate. Try again later.')
+        headers={
+            'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language':'en-US,en;q=0.9,km;q=0.8',
+            'Referer':'https://www.acledabank.com.kh/',
+            'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+        }
 
         class RateTableParser(HTMLParser):
             def __init__(self):
@@ -574,9 +574,15 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
                     self.row.append(' '.join(self.cell));self.cell=None
                 elif tag=='tr' and self.row is not None:
                     self.rows.append(self.row);self.row=None
-        parser=RateTableParser()
-        try:parser.feed(html)
-        except Exception:abort(502,'Could not parse the latest ACLEDA bank rate.')
+
+        try:
+            response=requests.get(url,headers=headers,timeout=(5,15))
+            response.raise_for_status()
+            parser=RateTableParser();parser.feed(response.text)
+        except (requests.RequestException,ValueError) as exc:
+            app.logger.warning('ACLEDA exchange-rate fetch failed: %s',exc)
+            abort(502,'ACLEDA rate is temporarily unavailable. The app will keep the last saved rate and retry later.')
+
         numbers=re.compile(r'(?<![A-Za-z])(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)')
         for row in parser.rows:
             first=' '.join(row[:1]).upper()
@@ -587,11 +593,12 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             if len(values)<2:continue
             bid,ask=values[:2]
             if not (1000<=bid<=10000 and 1000<=ask<=10000):continue
-            sell_rate=round(ask,4)
             page_text=' '.join(parser.text)
             stamp=re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*[AP]M)?',page_text,re.I)
-            return {'rate_khr_per_usd':sell_rate,'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank (sell rate)','source_url':url}
-        abort(502,'ACLEDA returned no usable USD/KHR buy and sell rates.')
+            return {'rate_khr_per_usd':round(ask,4),'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank (sell rate)','source_url':url}
+
+        app.logger.warning('ACLEDA exchange-rate page loaded but no valid USD/KHR sell quote was parsed.')
+        abort(502,'ACLEDA did not provide a usable USD/KHR sell rate. The app will retry later.')
 
     @app.put('/api/fx')
     @auth

@@ -881,7 +881,7 @@ def test_profile_persists_and_is_owner_scoped(client):
     assert client.put('/api/profile',json={'name':'A'*81},headers=headers()).status_code==400
 
 
-def test_fx_market_rate_uses_bank_midpoint_and_requires_auth(client,monkeypatch):
+def test_fx_market_rate_uses_bank_sell_rate_and_requires_auth(client,monkeypatch):
     from types import SimpleNamespace
     import personal_features
     calls=[]
@@ -899,6 +899,19 @@ def test_fx_market_rate_uses_bank_midpoint_and_requires_auth(client,monkeypatch)
     assert result.json['sell_rate']==4080
     assert result.json['date']=='October 9, 2026 8:10 AM'
     assert 'acledabank.com.kh' in calls[0][0]
+
+
+def test_fx_market_rate_does_not_use_other_source_when_acleda_fails(client,monkeypatch):
+    import requests
+    import personal_features
+    calls=[]
+    def fake_get(url,**kwargs):
+        calls.append(url)
+        raise requests.Timeout('upstream timeout')
+    monkeypatch.setattr(personal_features.requests,'get',fake_get)
+    result=client.get('/api/fx/market-rate',headers=headers())
+    assert result.status_code==502
+    assert calls==['https://www.acledabank.com.kh/assets/unity/exchangerate']
 
 
 def test_profile_photo_is_private_validated_and_removable(client):
