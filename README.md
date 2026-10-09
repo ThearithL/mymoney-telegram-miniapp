@@ -119,11 +119,11 @@ Now send `/start` and tap **💰 Open MyMoney** or the chat menu button. Use a p
 
 ## Telegram notifications for Render deploys
 
-Render build/start scripts send best-effort Telegram notices directly from the Render service. No GitHub Actions workflow or GitHub Secrets are used. The build script alerts on dependency-install failure; the start script alerts if Telegram setup, Gunicorn startup, or the `/health` check fails, and sends a success notice once `/health` returns HTTP 200. This confirms the app process is responding; Render may take a short time afterward to mark the deploy live.
+The Mini App checks Render's Deploy API when an external uptime monitor calls `/ops/render-deploy-watch/<RENDER_WATCH_SECRET>`. It sends one Telegram notice after each deploy reaches a final status (`live`, failed, or canceled), and stores notice IDs in PostgreSQL to avoid repeats. This uses Render API credentials kept in Render Environment; no GitHub Actions workflow or GitHub Secrets are used.
 
-The scripts use the Render environment variables already used by the app: `BOT_TOKEN` and numeric `ADMIN_USER_ID`. Ensure both are configured for the Render service and available during builds. The admin must send `/start` to the bot once before Telegram can send them messages. Notifications are best effort: missing variables or Telegram/network errors do not fail an otherwise successful build or app startup.
+Add `RENDER_API_KEY` and a long random `RENDER_WATCH_SECRET` in Render → Environment. Render automatically provides `RENDER_SERVICE_ID`. Keep `BOT_TOKEN` and numeric `ADMIN_USER_ID` set there, and send `/start` to the bot as Admin. Configure a separate HTTP monitor (for example, UptimeRobot) to request `https://YOUR-APP.onrender.com/ops/render-deploy-watch/YOUR_SECRET` every five minutes. Treat the monitor URL as a secret. The endpoint returns a pending status while a deploy is in progress and checks again at the next monitor request.
 
-For a manual Render service, set **Build Command** to `bash scripts/render-build.sh` and **Start Command** to `python scripts/render_start.py`; keep **Health Check Path** as `/health`. `render.yaml` already contains these commands for Blueprint deployments.
+This is polling, so notices can be delayed up to the monitor interval. It requires the existing service to be reachable when the monitor calls it; if the service is fully unavailable, it cannot notify through itself. Render's direct workspace webhooks can deliver official deploy events, but require a Pro workspace.
 
 ## 4. Everyday use
 
@@ -193,9 +193,9 @@ Tests cover signed authentication, expired/forged sessions, user ownership, crea
 
 ### សារជូនដំណឹង Deploy ទៅ Telegram Admin
 
-Render build/start script ផ្ញើស្ថានភាពទៅ Telegram Admin ដោយប្រើ `BOT_TOKEN` និង `ADMIN_USER_ID` ក្នុង Render Environment។ មិនត្រូវបន្ថែម token ឬ secret ទៅ GitHub ទេ។ កំណត់ Build Command ជា `bash scripts/render-build.sh` និង Start Command ជា `python scripts/render_start.py`។
+Render Deploy API watcher ផ្ញើស្ថានភាព deploy ផ្លូវការទៅ Telegram Admin ដោយប្រើ `RENDER_API_KEY`, `RENDER_WATCH_SECRET`, `BOT_TOKEN` និង `ADMIN_USER_ID` នៅក្នុង Render Environment។ បង្កើត HTTP monitor ឱ្យហៅ `https://YOUR-APP.onrender.com/ops/render-deploy-watch/YOUR_SECRET` រៀងរាល់ 5 នាទី។ កុំដាក់ secret ទាំងនេះក្នុង GitHub។
 
-មិនត្រូវបន្ថែម Secret ក្នុង GitHub ទេ។ កំណត់ `BOT_TOKEN` និង `ADMIN_USER_ID` នៅ Render → Environment (បើមានរួច សូមប្រើតម្លៃដដែល) ហើយ Admin ផ្ញើ `/start` ទៅ Bot ម្ដង ដើម្បីអាចទទួលសារជូនដំណឹង។
+កំណត់ `RENDER_API_KEY` និង `RENDER_WATCH_SECRET` នៅ Render → Environment រួមជាមួយ `BOT_TOKEN` និង `ADMIN_USER_ID` ដែលអ្នកប្រើរួច។ Render ផ្ដល់ `RENDER_SERVICE_ID` ដោយស្វ័យប្រវត្តិ។ Admin ត្រូវផ្ញើ `/start` ទៅ Bot ម្ដង។ កុំបញ្ចូល secret ណាមួយក្នុង GitHub។
 
 ## Admin approval behavior
 

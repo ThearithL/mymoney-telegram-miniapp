@@ -97,6 +97,11 @@ budget_alerts = Table('budget_alerts', metadata,
     Column('month',String(7),nullable=False),Column('currency',String(3),nullable=False),
     Column('level',Integer,nullable=False),UniqueConstraint('user_id','month','currency','level'))
 
+render_deploy_notices = Table('render_deploy_notices', metadata,
+    Column('deploy_id', String(100), primary_key=True),
+    Column('status', String(40), nullable=False),
+    Column('notified_at', BigInteger, nullable=False))
+
 
 delete_batches = Table('delete_batches', metadata,
     Column('token', String(32), primary_key=True), Column('user_id', BigInteger, nullable=False),
@@ -183,6 +188,9 @@ def create_app(config=None):
     if 'items_json' not in {column['name'] for column in inspect(engine).get_columns('transactions')}:
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE transactions ADD COLUMN items_json TEXT'))
+    if 'icon' not in {column['name'] for column in inspect(engine).get_columns('custom_categories')}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE custom_categories ADD COLUMN icon VARCHAR(12) NOT NULL DEFAULT '✨'"))
     def deleted_user_hash(uid):
         return hmac.new(app.secret_key.encode(), f'deleted-user:{uid}'.encode(), hashlib.sha256).hexdigest()
     # Upgrade old deletion markers to non-reversible tombstones, then erase their
@@ -498,6 +506,87 @@ def create_app(config=None):
     @app.get('/health')
     def health():
         return {'ok': True}
+
+    @app.get('/ops/render-deploy-watch/<watch_key>')
+    def render_deploy_watch(watch_key):
+        """Poll Render's official deploy status when called by an external monitor."""
+        expected_key = os.getenv('RENDER_WATCH_SECRET', '').strip()
+        api_key = os.getenv('RENDER_API_KEY', '').strip()
+        service_id = os.getenv('RENDER_SERVICE_ID', '').strip()
+        if not expected_key or not hmac.compare_digest(watch_key, expected_key):
+            abort(404)
+        if not api_key or not service_id or not admin:
+            return jsonify(ok=False, error='Deploy watcher is not configured'), 503
+
+        try:
+            response = requests.get(
+                f'https://api.render.com/v1/services/{service_id}/deploys',
+                params={'limit': 10},
+                headers={'Authorization': f'Bearer {api_key}', 'Accept': 'application/json'},
+                timeout=8)
+            if not response.ok:
+                return jsonify(ok=False, error='Render API request failed'), 502
+            rows = response.json()
+            if not isinstance(rows, list) or not rows:
+                return jsonify(ok=True, state='no_deploys')
+            deploys = [row.get('deploy', row) for row in rows if isinstance(row, dict)]
+            deploy = max(deploys, key=lambda item: str(item.get('createdAt', '')))
+        except (requests.RequestException, ValueError, TypeError):
+            return jsonify(ok=False, error='Could not read Render deploy status'), 502
+
+        status = str(deploy.get('status', '')).lower()
+        deploy_id = str(deploy.get('id', ''))
+        if not deploy_id:
+            return jsonify(ok=False, error='Render returned an invalid deploy record'), 502
+        if status not in {'live', 'build_failed', 'pre_deploy_failed', 'update_failed', 'failed', 'canceled', 'deactivated'}:
+            return jsonify(ok=True, state='in_progress', status=status)
+
+        now = int(time.time())
+        with engine.begin() as conn:
+            existing = conn.execute(select(render_deploy_notices.c.status,
+                render_deploy_notices.c.notified_at).where(
+                    render_deploy_notices.c.deploy_id == deploy_id)).first()
+            if existing and not (existing.status == 'sending' and now - existing.notified_at > 300):
+                return jsonify(ok=True, state='already_notified', status=status)
+            if existing:
+                conn.execute(delete(render_deploy_notices).where(
+                    render_deploy_notices.c.deploy_id == deploy_id))
+            if engine.dialect.name == 'postgresql':
+                from sqlalchemy.dialects.postgresql import insert as deploy_notice_insert
+            else:
+                from sqlalchemy.dialects.sqlite import insert as deploy_notice_insert
+            claim = deploy_notice_insert(render_deploy_notices).values(
+                deploy_id=deploy_id, status='sending', notified_at=now
+            ).on_conflict_do_nothing(index_elements=['deploy_id'])
+            if conn.execute(claim).rowcount != 1:
+                return jsonify(ok=True, state='already_notified', status=status)
+
+        commit = (deploy.get('commit') or {}).get('id', 'unknown')
+        short_commit = str(commit)[:7]
+        service_name = os.getenv('RENDER_SERVICE_NAME', 'MyMoney')
+        app_url = app.config.get('APP_URL', '').strip()
+        if status == 'live':
+            message = (f'✅ Render deploy succeeded / Deploy ជោគជ័យ\n'
+                       f'Service: {service_name}\nCommit: {short_commit}')
+        else:
+            message = (f'❌ Render deploy failed / Deploy បរាជ័យ\n'
+                       f'Service: {service_name}\nStatus: {status}\nCommit: {short_commit}')
+        if app_url:
+            message += f'\nApp: {app_url}'
+
+        delivered = telegram('sendMessage', {'chat_id': admin, 'text': message,
+            'disable_web_page_preview': True})
+        with engine.begin() as conn:
+            if delivered:
+                conn.execute(update(render_deploy_notices).where(
+                    render_deploy_notices.c.deploy_id == deploy_id).values(
+                        status=status, notified_at=int(time.time())))
+            else:
+                conn.execute(delete(render_deploy_notices).where(
+                    render_deploy_notices.c.deploy_id == deploy_id))
+        if not delivered:
+            return jsonify(ok=False, error='Telegram notification failed; will retry'), 502
+        return jsonify(ok=True, state='notified', status=status)
 
     def json_body():
         if len(request.get_data()) > 16384:

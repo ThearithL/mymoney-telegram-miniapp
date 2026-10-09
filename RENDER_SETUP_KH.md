@@ -18,25 +18,25 @@
 | ALLOWED_USER_IDS | ទុកទទេ ឬ ID ពិតរបស់អ្នកដែលអនុញ្ញាតជាមុន |
 | PYTHON_VERSION | 3.12.14 |
 
-APP_URL ត្រូវដូច URL ពិតរបស់ Render service របស់អ្នក។ កុំដាក់ Bot ID ក្នុង ADMIN_USER_ID។ កុំបញ្ចូល secret ក្នុង GitHub ឬ chat។ Build និង Start Command ត្រូវប្រើ scripts ដែលមានខាងក្រោម ដើម្បីបើក deploy notification។
+APP_URL ត្រូវដូច URL ពិតរបស់ Render service របស់អ្នក។ កុំដាក់ Bot ID ក្នុង ADMIN_USER_ID។ កុំបញ្ចូល secret ក្នុង GitHub ឬ chat។
 
 ## ៣. Commands
 
-Build Command (copy ទាំងបន្ទាត់):
+Build Command:
 
 ```bash
-bash scripts/render-build.sh
+pip install -r requirements.txt
 ```
 
 Start Command (copy ទាំងបន្ទាត់):
 
 ```bash
-python scripts/render_start.py
+python setup_bot.py && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
 ```
 
 វានឹងភ្ជាប់ webhook, callbacks និងប៊ូតុង MyMoney នៅពេល service ចាប់ផ្ដើម។ មិនចាំបាច់ run PowerShell setup ទៀតទេ។ ប្រើ Bot Token នេះសម្រាប់ service នេះតែមួយ។
 
-Deploy → រង់ចាំ Live។ ពិនិត្យ Logs ថាមាន `setWebhook: OK`, `setChatMenuButton: OK`, `setMyCommands: OK`។ Scripts នឹងផ្ញើសារទៅ Admin ពេល Build បរាជ័យ, app ឆ្លើយ `/health` បាន ឬ setup/startup បរាជ័យ។ ការផ្ញើសារជា best effort; បើមិនឃើញ សូមពិនិត្យ `BOT_TOKEN`, `ADMIN_USER_ID` និងផ្ញើ `/start` ទៅ Bot ជាមុន។
+Deploy → រង់ចាំ Live។ ពិនិត្យ Logs ថាមាន `setWebhook: OK`, `setChatMenuButton: OK`, `setMyCommands: OK`។
 
 ## ៤. កំណត់ខ្លួនឯងជា Admin
 
@@ -103,6 +103,8 @@ Home → ថវិកា → កំណត់៖ បន្ថែមថវិក�
 
 Header រូបភ្នែក៖ បិទបាំងចំនួនប្រាក់ក្នុង Browser នេះ។ ចំណូលចិត្ត៖ កត់ចំណាយញឹកញាប់បានរហ័ស រហូតដល់ 12 គំរូ។ គំរូបំពេញ Draft មុន—អ្នកអាចពិនិត្យ ឬកែចំនួន មុនចុចរក្សាទុក។
 
-## សារជូនដំណឹង Deploy ទៅ Telegram
+## សារជូនដំណឹង Deploy ផ្លូវការទៅ Telegram
 
-កំណត់ Build Command ជា `bash scripts/render-build.sh` និង Start Command ជា `python scripts/render_start.py`។ កូដប្រើតែ `BOT_TOKEN` និង `ADMIN_USER_ID` ពី Render Environment ដូច្នេះមិនត្រូវបង្កើត GitHub Secrets ឬ Render API key ទេ។ `ADMIN_USER_ID` ត្រូវជាលេខ ID របស់ Admin ហើយ Admin ត្រូវផ្ញើ `/start` ទៅ Bot ម្ដង។ សារ success មានន័យថា `/health` បាន HTTP 200; សារ fail ត្រូវបានផ្ញើពេល build ឬ startup មិនជោគជ័យ។
+Render → Environment បន្ថែម `RENDER_API_KEY` និង `RENDER_WATCH_SECRET` (បង្កើត random string យ៉ាងតិច 32 តួ)។ `RENDER_SERVICE_ID` ត្រូវបាន Render កំណត់ដោយស្វ័យប្រវត្តិ។ រក្សា `BOT_TOKEN` និង `ADMIN_USER_ID` របស់ Bot ដដែល ហើយ Admin ផ្ញើ `/start` ម្ដង។ កុំដាក់ secret នៅ GitHub។
+
+នៅ UptimeRobot បង្កើត HTTP monitor ដាច់ដោយឡែក ហៅ URL `https://YOUR-APP.onrender.com/ops/render-deploy-watch/YOUR_SECRET` រៀងរាល់ 5 នាទី។ ជំនួស `YOUR-APP` និង `YOUR_SECRET` តាម URL និង `RENDER_WATCH_SECRET` របស់អ្នក។ Endpoint នឹងពិនិត្យ Render API ហើយផ្ញើសារម្ដងសម្រាប់ deploy នីមួយៗ។ សារអាចយឺតដល់ចន្លោះពេល monitor; បើ service ទាំងមូលដាច់ Monitor មិនអាចហៅ endpoint នេះបានទេ។

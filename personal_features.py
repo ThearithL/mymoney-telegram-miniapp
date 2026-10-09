@@ -14,7 +14,7 @@ def define_tables(metadata):
       'photos':Table('receipt_photos',metadata,Column('user_id',BigInteger,primary_key=True),Column('request_id',String(64),primary_key=True),Column('data',LargeBinary,nullable=False)),
       'profiles':Table('personal_profiles',metadata,Column('user_id',BigInteger,primary_key=True),Column('name',String(80),nullable=False),Column('bio',String(160),nullable=False)),
       'fx':Table('currency_display_settings',metadata,Column('user_id',BigInteger,primary_key=True),Column('base_currency',String(3),nullable=False),Column('rate_khr_per_usd',Numeric(12,4),nullable=False)),
-      'custom_categories':Table('custom_categories',metadata,Column('user_id',BigInteger,primary_key=True),Column('key',String(20),primary_key=True),Column('name',String(40),nullable=False),Column('kind',String(10),nullable=False)),
+      'custom_categories':Table('custom_categories',metadata,Column('user_id',BigInteger,primary_key=True),Column('key',String(20),primary_key=True),Column('name',String(40),nullable=False),Column('kind',String(10),nullable=False),Column('icon',String(12),nullable=False,server_default='✨')),
       'debts':Table('personal_debts',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('direction',String(8),nullable=False),Column('person',String(80),nullable=False),Column('amount',BigInteger,nullable=False),Column('currency',String(3),nullable=False),Column('note',String(300),nullable=False),Column('due_date',Date,nullable=True),Column('created_at',Date,nullable=False),Column('status',String(10),nullable=False),Column('settled_at',Date,nullable=True)),
       'debt_photos':Table('personal_debt_photos',metadata,Column('debt_id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False),Column('data',LargeBinary,nullable=False)),
       'debt_events':Table('personal_debt_history',metadata,Column('id',Integer,primary_key=True),Column('user_id',BigInteger,nullable=False,index=True),Column('debt_id',Integer,nullable=False,index=True),Column('action',String(20),nullable=False),Column('details',Text,nullable=False),Column('created_at',BigInteger,nullable=False)),
@@ -44,6 +44,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
         else:
             from sqlalchemy.dialects.sqlite import insert as dialect_insert
         return dialect_insert(table)
+    allowed_category_icons={'✨','🛒','⛽','☕','🍜','🏠','🚗','💊','🎓','🧾','🎮','💳','🛍️','🐶','🐱','✈️','📱','👕','🌱','🎁'}
     def owned_entry(conn,identity):
         row=conn.execute(select(transactions).where(transactions.c.id==identity,transactions.c.user_id==g.user['id'])).mappings().first()
         if row is None:abort(404,'Entry not found')
@@ -68,13 +69,13 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @auth
     def categories_get():
         with engine.connect() as conn:rows=conn.execute(select(custom_categories).where(custom_categories.c.user_id==g.user['id']).order_by(custom_categories.c.name)).mappings().all()
-        return {'categories':[{'key':r['key'],'name':r['name'],'kind':r['kind']} for r in rows]}
+        return {'categories':[{'key':r['key'],'name':r['name'],'kind':r['kind'],'icon':r.get('icon') or '✨'} for r in rows]}
 
     @app.post('/api/categories')
     @auth
     def categories_add():
-        body=json_body();name=body.get('name');kind=body.get('kind')
-        if not isinstance(name,str) or not 1<=len(name.strip())<=40 or kind not in ('expense','income','both'):abort(400,'Enter a category name up to 40 characters and choose its type.')
+        body=json_body();name=body.get('name');kind=body.get('kind');icon=body.get('icon','✨')
+        if not isinstance(name,str) or not 1<=len(name.strip())<=40 or kind not in ('expense','income','both') or not isinstance(icon,str) or icon not in allowed_category_icons:abort(400,'Enter a category name up to 40 characters and choose its type and icon.')
         name=name.strip()
         with engine.begin() as conn:
             count=conn.execute(select(func.count()).select_from(custom_categories).where(custom_categories.c.user_id==g.user['id'])).scalar_one()
@@ -82,22 +83,25 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             if count>=40:abort(409,'You can create up to 40 custom categories.')
             if duplicate:abort(409,'A category with that name already exists.')
             key='c_'+uuid.uuid4().hex[:14]
-            conn.execute(insert(custom_categories).values(user_id=g.user['id'],key=key,name=name,kind=kind))
-        return {'key':key,'name':name,'kind':kind},201
+            conn.execute(insert(custom_categories).values(user_id=g.user['id'],key=key,name=name,kind=kind,icon=icon))
+        return {'key':key,'name':name,'kind':kind,'icon':icon},201
 
     @app.put('/api/categories/<key>')
     @auth
     def categories_rename(key):
-        body=json_body();name=body.get('name')
+        body=json_body();name=body.get('name');icon=body.get('icon')
         if not isinstance(name,str) or not 1<=len(name.strip())<=40:abort(400,'Enter a category name up to 40 characters.')
+        if icon is not None and (not isinstance(icon,str) or icon not in allowed_category_icons):abort(400,'Choose a supported category icon.')
         name=name.strip()
         with engine.begin() as conn:
             row=conn.execute(select(custom_categories.c.key).where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key)).first()
             duplicate=conn.execute(select(custom_categories.c.key).where(custom_categories.c.user_id==g.user['id'],func.lower(custom_categories.c.name)==name.lower(),custom_categories.c.key!=key)).first()
             if row is None:abort(404,'Category not found.')
             if duplicate:abort(409,'A category with that name already exists.')
-            conn.execute(custom_categories.update().where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key).values(name=name))
-        return {'ok':True,'key':key,'name':name}
+            values={'name':name}
+            if icon is not None:values['icon']=icon
+            conn.execute(custom_categories.update().where(custom_categories.c.user_id==g.user['id'],custom_categories.c.key==key).values(**values))
+        return {'ok':True,'key':key,'name':name,'icon':icon}
 
     @app.delete('/api/categories/<key>')
     @auth

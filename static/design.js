@@ -23,7 +23,7 @@ const iconPaths={
 function uiIcon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');for(const [k,v] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.65','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(k,v);const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',iconPaths[name]||iconPaths.other);svg.append(path);return svg;}
 document.querySelectorAll('[data-ui-icon]').forEach(el=>el.replaceChildren(uiIcon(el.dataset.uiIcon)));
 const receiptRows=rows;
-rows=function(target,items){receiptRows(target,items);$(target).querySelectorAll('.row-icon').forEach((el,i)=>el.replaceChildren(uiIcon(items[i].category)));};
+rows=function(target,items){receiptRows(target,items);$(target).querySelectorAll('.row-icon').forEach((el,i)=>{const custom=window.customCategories?.find(item=>item.key===items[i].category);if(custom)el.textContent=custom.icon||'✨';else el.replaceChildren(uiIcon(items[i].category));});};
 const baseTranslate=translate;
 translate=function(){baseTranslate();document.querySelectorAll('nav button').forEach(b=>{if(b.classList.contains('active'))b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});};
 const baseShowPage=showPage;

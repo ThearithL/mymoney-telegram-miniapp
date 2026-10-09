@@ -128,6 +128,43 @@ def test_transaction_category_must_match_kind(client,kind,category):
     valid={**data,'category':'other','request_id':'valid-category-'+kind}
     assert client.post('/api/transactions',json=valid,headers=headers()).status_code==201
 
+def test_render_deploy_watcher_reports_final_status_once(tmp_path,monkeypatch):
+    import app as app_module
+    monkeypatch.setenv('RENDER_API_KEY','render-api-test')
+    monkeypatch.setenv('RENDER_SERVICE_ID','srv-test')
+    monkeypatch.setenv('RENDER_WATCH_SECRET','watch-secret-test')
+    monkeypatch.setenv('RENDER_SERVICE_NAME','MyMoney test')
+    api_result={'rows':[{'deploy':{'id':'dep-test-1','status':'build_in_progress',
+        'createdAt':'2026-10-08T10:00:00Z','commit':{'id':'abcdef0123456789'}}}]}
+    sent=[]
+    class Response:
+        ok=True
+        def json(self): return api_result['rows']
+    monkeypatch.setattr(app_module.requests,'get',lambda *a,**k: Response())
+    class TelegramResponse:
+        ok=True
+        def json(self): return {'ok':True}
+    monkeypatch.setattr(app_module.requests,'post',lambda *a,**k: (sent.append(k['json']) or TelegramResponse()))
+    app=create_app({'TESTING':True,'BOT_TOKEN':TOKEN,'ADMIN_USER_ID':'123',
+        'DATABASE_URL':'sqlite:///'+str(tmp_path/'render-watch.db'),'WEBHOOK_SECRET':'secret'})
+    client=app.test_client()
+    path='/ops/render-deploy-watch/watch-secret-test'
+
+    pending=client.get(path)
+    assert pending.status_code==200 and pending.json['state']=='in_progress'
+    assert sent==[]
+
+    api_result['rows'][0]['deploy']['status']='live'
+    done=client.get(path)
+    assert done.status_code==200 and done.json['state']=='notified'
+    assert len(sent)==1 and 'succeeded' in sent[0]['text'] and 'abcdef0' in sent[0]['text']
+
+    repeated=client.get(path)
+    assert repeated.status_code==200 and repeated.json['state']=='already_notified'
+    assert len(sent)==1
+
+    assert client.get('/ops/render-deploy-watch/wrong-key').status_code==404
+
 def test_budget_currency_and_month_isolation(client):
     for currency,amount in [('USD','100.25'),('KHR','200000')]:
         response=client.put('/api/budget',json={'month':'2026-01','currency':currency,'amount':amount},headers=headers())
@@ -922,15 +959,16 @@ def test_fx_display_settings_are_validated_and_private(client):
 
 
 def test_custom_categories_crud_ownership_and_transaction_use(client):
-    created=client.post('/api/categories',json={'name':'Pets','kind':'expense'},headers=headers())
+    created=client.post('/api/categories',json={'name':'Pets','kind':'expense','icon':'🐶'},headers=headers())
     assert created.status_code==201
     category=created.json
-    assert category['name']=='Pets' and category['kind']=='expense'
+    assert category['name']=='Pets' and category['kind']=='expense' and category['icon']=='🐶'
     assert client.get('/api/categories',headers=headers(456)).json=={'categories':[]}
     entry={**payload(),'currency':'KHR','amount':'2500','category':category['key']}
     assert client.post('/api/transactions',json=entry,headers=headers()).status_code==201
     assert client.post('/api/transactions',json={**entry,'request_id':'wrong-owner-category'},headers=headers(456)).status_code==400
-    assert client.put('/api/categories/'+category['key'],json={'name':'Pet care'},headers=headers()).status_code==200
+    edited=client.put('/api/categories/'+category['key'],json={'name':'Pet care','icon':'✨'},headers=headers())
+    assert edited.status_code==200 and edited.json['icon']=='✨'
     assert client.delete('/api/categories/'+category['key'],headers=headers()).status_code==409
     assert client.put('/api/categories/'+category['key'],json={'name':'Pets'},headers=headers(456)).status_code==404
     income=client.post('/api/categories',json={'name':'Gift money','kind':'income'},headers=headers()).json
@@ -939,6 +977,7 @@ def test_custom_categories_crud_ownership_and_transaction_use(client):
     assert client.put('/api/category-budgets',json={'month':'2026-01','currency':'KHR','category':income['key'],'amount':'20'},headers=headers()).status_code==400
     assert client.delete('/api/categories/'+income['key'],headers=headers()).status_code==200
     assert client.post('/api/categories',json={'name':'  ','kind':'both'},headers=headers()).status_code==400
+    assert client.post('/api/categories',json={'name':'Invalid icon','kind':'both','icon':'<script>'},headers=headers()).status_code==400
 
 
 def test_personal_debts_crud_proof_photo_and_user_isolation(client):
