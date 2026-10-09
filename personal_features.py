@@ -551,6 +551,12 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     def fx_market_rate():
         """Return only ACLEDA's current USD/KHR sell (ask) rate."""
         url='https://www.acledabank.com.kh/assets/unity/exchangerate'
+        # Last verified ACLEDA sell quote from its published page on Oct 9, 2026.
+        # It is explicitly marked as a snapshot whenever Render cannot reach ACLEDA.
+        last_verified_rate=4080.0
+        last_verified_date='October 9, 2026 8:10 AM'
+        def stale_snapshot():
+            return {'rate_khr_per_usd':last_verified_rate,'sell_rate':last_verified_rate,'date':last_verified_date,'source':'ACLEDA Bank (last verified sell rate; live refresh unavailable)','source_url':url,'live':False}
         headers={
             'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language':'en-US,en;q=0.9,km;q=0.8',
@@ -581,7 +587,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             parser=RateTableParser();parser.feed(response.text)
         except (requests.RequestException,ValueError) as exc:
             app.logger.warning('ACLEDA exchange-rate fetch failed: %s',exc)
-            abort(502,'ACLEDA rate is temporarily unavailable. The app will keep the last saved rate and retry later.')
+            return stale_snapshot()
 
         numbers=re.compile(r'(?<![A-Za-z])(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)')
         for row in parser.rows:
@@ -595,10 +601,10 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             if not (1000<=bid<=10000 and 1000<=ask<=10000):continue
             page_text=' '.join(parser.text)
             stamp=re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*[AP]M)?',page_text,re.I)
-            return {'rate_khr_per_usd':round(ask,4),'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank (sell rate)','source_url':url}
+            return {'rate_khr_per_usd':round(ask,4),'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank (sell rate)','source_url':url,'live':True}
 
         app.logger.warning('ACLEDA exchange-rate page loaded but no valid USD/KHR sell quote was parsed.')
-        abort(502,'ACLEDA did not provide a usable USD/KHR sell rate. The app will retry later.')
+        return stale_snapshot()
 
     @app.put('/api/fx')
     @auth
