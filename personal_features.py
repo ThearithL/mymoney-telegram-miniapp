@@ -1,6 +1,8 @@
 """Additive personal features; photos are stored in PostgreSQL, not Render's disk."""
 import io,json,time,uuid,warnings
 import requests
+import re
+from html.parser import HTMLParser
 from datetime import date,datetime
 from decimal import Decimal,InvalidOperation
 from zoneinfo import ZoneInfo
@@ -547,42 +549,49 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @app.get('/api/fx/market-rate')
     @auth
     def fx_market_rate():
-        """Return the latest NBC daily USD/KHR rate from the MEF public dataset."""
-        url='https://data.mef.gov.kh/api/v1/public-datasets/pd_66a0cd503e0bd300012638fb4/json?page=1&page_size=20'
+        """Return ACLEDA's latest bank USD/KHR midpoint and bid/ask rates."""
+        url='https://www.acledabank.com.kh/assets/unity/exchangerate'
         try:
-            response=requests.get(url,headers={'Accept':'application/json','User-Agent':'MyMoney-Personal-App/1.0'},timeout=8)
+            response=requests.get(url,headers={'Accept':'text/html','User-Agent':'MyMoney-Personal-App/1.0'},timeout=8)
             response.raise_for_status()
-            payload=response.json()
-        except (requests.RequestException,ValueError):
-            abort(502,'Could not fetch the latest NBC reference rate. Try again later.')
+            html=response.text
+        except requests.RequestException:
+            abort(502,'Could not fetch the latest ACLEDA bank rate. Try again later.')
 
-        records=[]
-        def collect(value):
-            if isinstance(value,list):
-                for child in value:collect(child)
-            elif isinstance(value,dict):
-                records.append(value)
-                for key in ('data','results','records','items','rows'):
-                    child=value.get(key)
-                    if isinstance(child,(dict,list)):collect(child)
-        collect(payload)
-        for row in records:
-            normalized={str(key).strip().lower().replace(' ','_').replace('-','_'):value for key,value in row.items()}
-            raw=next((normalized.get(key) for key in ('exchange_rate','official_rate','rate_khr_per_usd','usd_khr','usd_khr_rate','exchange_rate_usd_khr') if normalized.get(key) is not None),None)
-            if raw is None:
-                bid=next((normalized.get(key) for key in ('purchase','buy','bid') if normalized.get(key) is not None),None)
-                ask=next((normalized.get(key) for key in ('sale','sell','ask') if normalized.get(key) is not None),None)
-                if bid is not None and ask is not None:
-                    try:raw=(Decimal(str(bid).replace(',',''))+Decimal(str(ask).replace(',','')))/2
-                    except (InvalidOperation,TypeError,ValueError):continue
-            if raw is None:continue
-            try:
-                rate=Decimal(str(raw).replace(',',''))
-                if not rate.is_finite() or not Decimal('1000')<=rate<=Decimal('10000'):continue
-            except (InvalidOperation,TypeError,ValueError):continue
-            rate_date=next((normalized.get(key) for key in ('date','rate_date','published_date','updated_at') if normalized.get(key)),None)
-            return {'rate_khr_per_usd':float(rate),'date':str(rate_date or ''),'source':'National Bank of Cambodia via MEF Open Data','source_url':'https://data.mef.gov.kh/datasets/pd_66a0cd503e0bd300012638fb4'}
-        abort(502,'The official exchange-rate source returned no usable USD/KHR rate.')
+        class RateTableParser(HTMLParser):
+            def __init__(self):
+                super().__init__();self.rows=[];self.row=None;self.cell=None;self.text=[]
+            def handle_starttag(self,tag,attrs):
+                if tag=='tr':self.row=[]
+                elif tag in ('td','th') and self.row is not None:self.cell=[]
+            def handle_data(self,data):
+                value=data.strip()
+                if value:
+                    self.text.append(value)
+                    if self.cell is not None:self.cell.append(value)
+            def handle_endtag(self,tag):
+                if tag in ('td','th') and self.row is not None and self.cell is not None:
+                    self.row.append(' '.join(self.cell));self.cell=None
+                elif tag=='tr' and self.row is not None:
+                    self.rows.append(self.row);self.row=None
+        parser=RateTableParser()
+        try:parser.feed(html)
+        except Exception:abort(502,'Could not parse the latest ACLEDA bank rate.')
+        numbers=re.compile(r'(?<![A-Za-z])(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)')
+        for row in parser.rows:
+            first=' '.join(row[:1]).upper()
+            if 'USD' not in first or 'KHR' not in first:continue
+            values=[]
+            for cell in row[1:]:
+                values.extend(float(value.replace(',','')) for value in numbers.findall(cell))
+            if len(values)<2:continue
+            bid,ask=values[:2]
+            if not (1000<=bid<=10000 and 1000<=ask<=10000):continue
+            midpoint=round((bid+ask)/2,4)
+            page_text=' '.join(parser.text)
+            stamp=re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*[AP]M)?',page_text,re.I)
+            return {'rate_khr_per_usd':midpoint,'buy_rate':bid,'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank','source_url':url}
+        abort(502,'ACLEDA returned no usable USD/KHR buy and sell rates.')
 
     @app.put('/api/fx')
     @auth
