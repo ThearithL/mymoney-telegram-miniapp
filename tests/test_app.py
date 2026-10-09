@@ -881,6 +881,22 @@ def test_profile_persists_and_is_owner_scoped(client):
     assert client.put('/api/profile',json={'name':'A'*81},headers=headers()).status_code==400
 
 
+def test_fx_market_rate_uses_official_dataset_and_requires_auth(client,monkeypatch):
+    from types import SimpleNamespace
+    import personal_features
+    calls=[]
+    def fake_get(url,**kwargs):
+        calls.append((url,kwargs))
+        return SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'data':[{'date':'2026-10-09','exchange_rate':'4,069'}]})
+    monkeypatch.setattr(personal_features.requests,'get',fake_get)
+    assert client.get('/api/fx/market-rate').status_code==401
+    result=client.get('/api/fx/market-rate',headers=headers())
+    assert result.status_code==200
+    assert result.json['rate_khr_per_usd']==4069
+    assert result.json['date']=='2026-10-09'
+    assert 'data.mef.gov.kh' in calls[0][0]
+
+
 def test_profile_photo_is_private_validated_and_removable(client):
     output=io.BytesIO()
     Image.new('RGB',(24,24),(32,120,88)).save(output,format='PNG')

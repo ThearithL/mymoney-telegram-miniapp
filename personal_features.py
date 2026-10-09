@@ -1,6 +1,8 @@
 """Additive personal features; photos are stored in PostgreSQL, not Render's disk."""
 import io,json,time,uuid,warnings
+import requests
 from datetime import date,datetime
+from decimal import Decimal,InvalidOperation
 from zoneinfo import ZoneInfo
 from flask import abort,g,request,Response
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -541,6 +543,46 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     def fx_get():
         with engine.connect() as conn:row=conn.execute(select(fx).where(fx.c.user_id==g.user['id'])).mappings().first()
         return {'base_currency':row['base_currency'] if row else 'KHR','rate_khr_per_usd':float(row['rate_khr_per_usd']) if row else 4000.0}
+
+    @app.get('/api/fx/market-rate')
+    @auth
+    def fx_market_rate():
+        """Return the latest NBC daily USD/KHR rate from the MEF public dataset."""
+        url='https://data.mef.gov.kh/api/v1/public-datasets/pd_66a0cd503e0bd300012638fb4/json?page=1&page_size=20'
+        try:
+            response=requests.get(url,headers={'Accept':'application/json','User-Agent':'MyMoney-Personal-App/1.0'},timeout=8)
+            response.raise_for_status()
+            payload=response.json()
+        except (requests.RequestException,ValueError):
+            abort(502,'Could not fetch the latest NBC reference rate. Try again later.')
+
+        records=[]
+        def collect(value):
+            if isinstance(value,list):
+                for child in value:collect(child)
+            elif isinstance(value,dict):
+                records.append(value)
+                for key in ('data','results','records','items','rows'):
+                    child=value.get(key)
+                    if isinstance(child,(dict,list)):collect(child)
+        collect(payload)
+        for row in records:
+            normalized={str(key).strip().lower().replace(' ','_').replace('-','_'):value for key,value in row.items()}
+            raw=next((normalized.get(key) for key in ('exchange_rate','official_rate','rate_khr_per_usd','usd_khr','usd_khr_rate','exchange_rate_usd_khr') if normalized.get(key) is not None),None)
+            if raw is None:
+                bid=next((normalized.get(key) for key in ('purchase','buy','bid') if normalized.get(key) is not None),None)
+                ask=next((normalized.get(key) for key in ('sale','sell','ask') if normalized.get(key) is not None),None)
+                if bid is not None and ask is not None:
+                    try:raw=(Decimal(str(bid).replace(',',''))+Decimal(str(ask).replace(',','')))/2
+                    except (InvalidOperation,TypeError,ValueError):continue
+            if raw is None:continue
+            try:
+                rate=Decimal(str(raw).replace(',',''))
+                if not rate.is_finite() or not Decimal('1000')<=rate<=Decimal('10000'):continue
+            except (InvalidOperation,TypeError,ValueError):continue
+            rate_date=next((normalized.get(key) for key in ('date','rate_date','published_date','updated_at') if normalized.get(key)),None)
+            return {'rate_khr_per_usd':float(rate),'date':str(rate_date or ''),'source':'National Bank of Cambodia via MEF Open Data','source_url':'https://data.mef.gov.kh/datasets/pd_66a0cd503e0bd300012638fb4'}
+        abort(502,'The official exchange-rate source returned no usable USD/KHR rate.')
 
     @app.put('/api/fx')
     @auth
