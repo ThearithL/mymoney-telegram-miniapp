@@ -549,7 +549,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @app.get('/api/fx/market-rate')
     @auth
     def fx_market_rate():
-        """Return ACLEDA's latest bank USD/KHR midpoint and bid/ask rates."""
+        """Return ACLEDA's latest bank USD/KHR sell (ask) rate for converting USD to KHR."""
         url='https://www.acledabank.com.kh/assets/unity/exchangerate'
         try:
             response=requests.get(url,headers={'Accept':'text/html','User-Agent':'MyMoney-Personal-App/1.0'},timeout=8)
@@ -587,10 +587,10 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
             if len(values)<2:continue
             bid,ask=values[:2]
             if not (1000<=bid<=10000 and 1000<=ask<=10000):continue
-            midpoint=round((bid+ask)/2,4)
+            sell_rate=round(ask,4)
             page_text=' '.join(parser.text)
             stamp=re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*[AP]M)?',page_text,re.I)
-            return {'rate_khr_per_usd':midpoint,'buy_rate':bid,'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank','source_url':url}
+            return {'rate_khr_per_usd':sell_rate,'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank (sell rate)','source_url':url}
         abort(502,'ACLEDA returned no usable USD/KHR buy and sell rates.')
 
     @app.put('/api/fx')

@@ -895,8 +895,7 @@ def test_fx_market_rate_uses_bank_midpoint_and_requires_auth(client,monkeypatch)
     assert client.get('/api/fx/market-rate').status_code==401
     result=client.get('/api/fx/market-rate',headers=headers())
     assert result.status_code==200
-    assert result.json['rate_khr_per_usd']==4073
-    assert result.json['buy_rate']==4066
+    assert result.json['rate_khr_per_usd']==4080
     assert result.json['sell_rate']==4080
     assert result.json['date']=='October 9, 2026 8:10 AM'
     assert 'acledabank.com.kh' in calls[0][0]
