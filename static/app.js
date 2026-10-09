@@ -39,6 +39,9 @@ Object.assign(km,{goalDeadline:'ថ្ងៃចង់សម្រេច (ជា�
 Object.assign(km,{spendingNone:'មិនកំណត់'});
 
 Object.assign(en,{moreTools:'More personal tools',screenMode:'Mini App display size',screenModeDevice:'Follow Telegram/device',screenModeFull:'Fullscreen',screenModeNormal:'Normal (not fullscreen)',fullscreenHelp:'Choose how the Mini App fits your screen. Your choice is saved on this device.',fullscreenUnsupported:'Fullscreen is not supported by this Telegram client; choose device or normal mode.',fullscreenFailed:'Telegram could not change the fullscreen mode.'});
+Object.assign(en,{wallpaper:'Wallpaper',wallpaperDefault:'Original',wallpaperMeadow:'Green meadow',wallpaperSunset:'Sunset',wallpaperLavender:'Lavender',wallpaperOcean:'Ocean',wallpaperHelp:'Choose a soft background. This preference is saved on this device only.'});
+Object.assign(km,{wallpaper:'ផ្ទៃខាងក្រោយ',wallpaperDefault:'រូបរាងដើម',wallpaperMeadow:'សួនបៃតង',wallpaperSunset:'ថ្ងៃលិច',wallpaperLavender:'ផ្កាឡាវេនឌ័រ',wallpaperOcean:'សមុទ្រ',wallpaperHelp:'ជ្រើសផ្ទៃខាងក្រោយទន់ៗ។ ការកំណត់នេះរក្សាទុកលើឧបករណ៍នេះប៉ុណ្ណោះ។'});
+
 Object.assign(km,{moreTools:'ឧបករណ៍ផ្ទាល់ខ្លួនបន្ថែម',screenMode:'ទំហំបង្ហាញ Mini App',screenModeDevice:'តាម Telegram/ឧបករណ៍',screenModeFull:'ពេញអេក្រង់',screenModeNormal:'ទំហំធម្មតា (មិនពេញអេក្រង់)',fullscreenHelp:'ជ្រើសរបៀបបង្ហាញ App។ ជម្រើសនេះត្រូវបានរក្សាទុកក្នុងឧបករណ៍នេះ។',fullscreenUnsupported:'Telegram នេះមិនគាំទ្រពេញអេក្រង់ទេ។ សូមជ្រើសតាមឧបករណ៍ ឬទំហំធម្មតា។',fullscreenFailed:'Telegram មិនអាចប្ដូរទំហំអេក្រង់បានទេ។'});
 
 let goalsState=[],currentGoal=null,goalRequestId='',goalsVersion=0,toastTimer,showHiddenGoals=false;
@@ -335,6 +338,12 @@ $('deleteGoal').onclick=async()=>{
   finally{busy($('deleteGoal'),false);$('saveGoal').disabled=false;}
 };
 $('theme').onchange=()=>{appTheme=$('theme').value;try{localStorage.setItem('mymoney-theme',appTheme);}catch{}applyTheme();};
+let appWallpaper='default';
+try{appWallpaper=localStorage.getItem('mymoney-wallpaper')||'default';}catch{}
+if(!['default','meadow','sunset','lavender','ocean'].includes(appWallpaper))appWallpaper='default';
+function applyWallpaper(){document.body.dataset.wallpaper=appWallpaper;const control=$('wallpaper');if(control)control.value=appWallpaper;}
+$('wallpaper').onchange=()=>{appWallpaper=$('wallpaper').value;try{localStorage.setItem('mymoney-wallpaper',appWallpaper);}catch{}applyWallpaper();};
+applyWallpaper();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);applyTheme();
 function supportsTelegramFullscreen(){try{return !!(tg?.initData&&tg.isVersionAtLeast('8.0')&&typeof tg.requestFullscreen==='function'&&typeof tg.exitFullscreen==='function');}catch{return false;}}
 function syncFullscreenControl(statusKey=null){$('screenMode').value=screenMode;$('fullscreenStatus').textContent=t(statusKey||(screenMode==='fullscreen'&&!supportsTelegramFullscreen()?'fullscreenUnsupported':'fullscreenHelp'));}
@@ -406,13 +415,3 @@ if (tg?.initData) {
 } else {
   bootDone();notify(t('openTelegram'));
 }
-
-Object.assign(en,{wallpaper:'Wallpaper',wallpaperDefault:'Original',wallpaperMeadow:'Green meadow',wallpaperSunset:'Sunset',wallpaperLavender:'Lavender',wallpaperOcean:'Ocean',wallpaperHelp:'Choose a soft background. This preference is saved on this device only.'});
-Object.assign(km,{wallpaper:'ផ្ទៃខាងក្រោយ',wallpaperDefault:'រូបរាងដើម',wallpaperMeadow:'សួនបៃតង',wallpaperSunset:'ថ្ងៃលិច',wallpaperLavender:'ផ្កាឡាវេនឌ័រ',wallpaperOcean:'សមុទ្រ',wallpaperHelp:'ជ្រើសផ្ទៃខាងក្រោយទន់ៗ។ ការកំណត់នេះរក្សាទុកលើឧបករណ៍នេះប៉ុណ្ណោះ។'});
-
-let appWallpaper='default';
-try{appWallpaper=localStorage.getItem('mymoney-wallpaper')||'default';}catch{}
-if(!['default','meadow','sunset','lavender','ocean'].includes(appWallpaper))appWallpaper='default';
-function applyWallpaper(){document.body.dataset.wallpaper=appWallpaper;$('wallpaper').value=appWallpaper;}
-$('wallpaper').onchange=()=>{appWallpaper=$('wallpaper').value;try{localStorage.setItem('mymoney-wallpaper',appWallpaper);}catch{}applyWallpaper();};
-applyWallpaper();
