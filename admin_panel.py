@@ -21,10 +21,11 @@ def money(amount, currency):
 
 
 class AdminPanel:
-    def __init__(self, engine, owner, allowed, tables, telegram, config):
+    def __init__(self, engine, owner, allowed, tables, telegram, config, display_name=None):
         self.engine, self.owner, self.allowed = engine, owner, allowed
         self.users, self.access, self.tx, self.budgets, self.actions, self.audit, self.goals = tables
         self.telegram, self.config = telegram, config
+        self.display_name = display_name or (lambda uid, fallback='User', **kw: fallback)
 
     def ids(self):
         return union(select(self.users.c.user_id), select(self.access.c.user_id),
@@ -87,7 +88,7 @@ class AdminPanel:
             if pending:
                 query = query.where(self.access.c.status == 'pending')
             rows = conn.execute(query.order_by(ids.c.user_id).offset(offset).limit(9)).mappings().all()
-        buttons = [[button(f"{r['user_id']} · {(r['name'] or 'User')[:25]} · {self.status(r['user_id'],r['status'])}",
+        buttons = [[button(f"{r['user_id']} · {self.display_name(r['user_id'], r['name'] or 'User', admin_context=True)[:25]} · {self.status(r['user_id'],r['status'])}",
                            f"admin:user:{r['user_id']}")] for r in rows[:8]]
         mode = 'pending' if pending else 'users'
         pager = []
@@ -113,7 +114,7 @@ class AdminPanel:
             month = datetime.now(ZoneInfo('Asia/Phnom_Penh')).strftime('%Y-%m')
             limits = conn.execute(select(self.budgets).where(self.budgets.c.user_id == uid,
                 self.budgets.c.month == month)).mappings().all()
-        text = f"👤 {(user or {}).get('name','User')}\nTelegram ID: {uid}\nStatus: {self.status(uid, access['status'] if access else None)}\n\nAll-time recorded totals:"
+        text = f"👤 {self.display_name(uid, (user or {}).get('name') or 'User', admin_context=True)}\nTelegram ID: {uid}\nStatus: {self.status(uid, access['status'] if access else None)}\n\nAll-time recorded totals:"
         text += ''.join(f'\n{kind}: {money(amount,currency)}' for currency,kind,amount in totals) or '\nNo transactions.'
         text += f'\n\nBudgets ({month}):' + (''.join(f"\n{money(r['amount'],r['currency'])}" for r in limits) or '\nNone')
         rows = [[button('🧾 កំណត់ត្រា / Transactions', f'admin:tx:{uid}:0')], [button('🎯 Goals', f'admin:goals:{uid}:0')]]

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="km">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MyMoney · Budget overview</title>
+<link rel="stylesheet" href="/insights-assets/style.css">
+<script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+<script src="/insights-assets/app.js" defer></script>
+</head>
+<body>
+<main>
+<header><a class="back" href="/">← MyMoney</a><span class="badge">KHR · USD</span></header>
+<section class="intro"><p class="eyebrow">MYMONEY / លុយខ្ញុំ</p><h1>ទិដ្ឋភាពថវិកា<br><span>Budget overview</span></h1><p id="greeting">បើកពី Telegram / Open from Telegram</p></section>
+<div class="toolbar"><label for="month">ខែ / Month <input id="month" type="month" min="2000-01" max="2100-12" required></label><button id="refresh" type="button">↻ Refresh / ធ្វើបច្ចុប្បន្នភាព</button></div>
+<p id="status" role="status" aria-live="polite"></p>
+<section id="cards" class="cards" aria-label="Budget by currency"></section>
+<p id="period-note" class="muted"></p>
+<section class="profile"><div><p class="eyebrow">YOUR PROFILE / ប្រវត្តិរូប</p><h2>ឈ្មោះបង្ហាញ / Display name</h2><p class="muted">ឈ្មោះនេះប្រើក្នុង MyMoney និង Bot។<br>This changes your MyMoney name, not your Telegram account.</p></div>
+<form id="profile-form"><label for="name">ឈ្មោះ / Name</label><input id="name" autocomplete="name" maxlength="80" required><button id="save" type="submit">រក្សាទុក / Save name</button><p id="profile-status" role="status" aria-live="polite"></p></form></section>
+<footer>USD និង KHR បង្ហាញដាច់ដោយឡែក។<br>Each currency is calculated separately. Daily allowance uses the remaining monthly budget, including today; it is not your bank balance.</footer>
+</main>
+<template id="card-template"><article class="card"><div class="card-header"><h2 class="currency"></h2><span class="state badge"></span></div><p class="muted">ចំណាយ / Expenses</p><p class="spent amount"></p><p class="budget muted"></p><progress max="100" value="0" aria-label="Budget used"></progress><p class="percent"></p><dl></dl><div class="comparison"></div></article></template>
+</body></html>

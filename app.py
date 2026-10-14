@@ -21,6 +21,7 @@ from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInte
 from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
 from personal_features import define_tables, register_features, archive_rows
+from insights import budget_snapshot, budget_message
 
 load_dotenv()
 CATEGORIES = ['food', 'coffee', 'transport', 'shopping', 'bills', 'study', 'health', 'other', 'salary']
@@ -164,6 +165,7 @@ def create_app(config=None):
                       WEBHOOK_SECRET=os.getenv('WEBHOOK_SECRET', ''),
                       ALLOWED_USER_IDS=os.getenv('ALLOWED_USER_IDS', ''),
                       ADMIN_USER_ID=os.getenv('ADMIN_USER_ID', ''),
+                      ADMIN_DISPLAY_NAME=os.getenv('ADMIN_DISPLAY_NAME', 'Thearith'),
                       ADMIN_PASSWORD_HASH=os.getenv('ADMIN_PASSWORD_HASH', ''),
                       ADMIN_PASSWORD=os.getenv('ADMIN_PASSWORD', ''),
                       FLASK_SECRET_KEY=os.getenv('FLASK_SECRET_KEY', ''),
@@ -236,6 +238,40 @@ def create_app(config=None):
         with engine.connect() as conn:
             return conn.execute(select(app_admins.c.user_id).where(app_admins.c.user_id == uid)).first() is not None
 
+    def profile_name(uid, fallback='User', admin_context=False):
+        with engine.connect() as conn:
+            profile = conn.execute(select(personal_tables['profiles'].c.name).where(
+                personal_tables['profiles'].c.user_id == uid)).scalar_one_or_none()
+            user = conn.execute(select(registered_users).where(
+                registered_users.c.user_id == uid)).mappings().first()
+        if admin_context and uid != admin and user and user['admin_label']:
+            return user['admin_label']
+        return profile or (app.config['ADMIN_DISPLAY_NAME'] if uid == admin else None) or (user or {}).get('name') or fallback
+
+    def save_profile(uid, name, bio=None):
+        name = name.strip() if isinstance(name, str) else ''
+        if not 1 <= len(name) <= 80 or any(ord(c) < 32 or ord(c) == 127 for c in name):
+            abort(400, 'Name: 1–80 characters on one line.')
+        if bio is not None and (not isinstance(bio, str) or len(bio) > 160):
+            abort(400, 'Bio: up to 160 characters.')
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as upsert
+        profiles = personal_tables['profiles']
+        with engine.begin() as conn:
+            values = {'user_id': uid, 'name': name, 'bio': bio.strip() if bio is not None else ''}
+            changes = {'name': name}
+            if bio is not None:
+                changes['bio'] = values['bio']
+            conn.execute(upsert(profiles).values(**values).on_conflict_do_update(
+                index_elements=['user_id'], set_=changes))
+            if uid == admin:
+                conn.execute(update(registered_users).where(registered_users.c.user_id == uid).values(admin_label=name))
+
+    app.extensions['profile_name'] = profile_name
+    app.extensions['save_profile'] = save_profile
+
     def remember_user(user):
         uid = user.get('id')
         if type(uid) is not int or uid <= 0:
@@ -267,6 +303,25 @@ def create_app(config=None):
         if not known:
             remember_user({'id': uid})
 
+    # One-time requested rename; this never grants access or modifies money records.
+    rename_uid = 1219084924
+    if is_admin_user(rename_uid):
+        marker = 'name:Thearith:v1'
+        profiles = personal_tables['profiles']
+        if engine.dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import insert as rename_upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as rename_upsert
+        with engine.begin() as conn:
+            done = conn.execute(select(admin_audit.c.id).where(
+                admin_audit.c.target_id == rename_uid, admin_audit.c.action == marker)).first()
+            if not done:
+                stmt = rename_upsert(profiles).values(user_id=rename_uid, name='Thearith', bio='')
+                conn.execute(stmt.on_conflict_do_update(index_elements=['user_id'], set_={'name': 'Thearith'}))
+                conn.execute(update(registered_users).where(registered_users.c.user_id == rename_uid).values(admin_label='Thearith'))
+                conn.execute(insert(admin_audit).values(admin_id=rename_uid, target_id=rename_uid,
+                    action=marker, at=int(time.time())))
+
     def has_access(uid):
         with engine.connect() as conn:
             if conn.execute(select(deleted_users.c.user_hash).where(
@@ -291,7 +346,7 @@ def create_app(config=None):
             return False
 
     admin_ui = AdminPanel(engine, admin, allowed,
-        (registered_users, access_requests, transactions, budgets, admin_actions, admin_audit, savings_goals), telegram, app.config)
+        (registered_users, access_requests, transactions, budgets, admin_actions, admin_audit, savings_goals), telegram, app.config, profile_name)
 
     def menu_keyboard(uid):
         rows = [[{'text': '💰 MyMoney'}, {'text': '📊 សង្ខេប / Summary'}],
@@ -300,6 +355,7 @@ def create_app(config=None):
                 [{'text': '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report'}, {'text': '⚙️ ថវិកាប្រចាំខែ / Monthly budget'}],
                 [{'text': '🎯 គោលដៅសន្សំ / Savings goals'}],
                 [{'text': '🕘 ប្រតិបត្តិការថ្មីៗ / Recent activity'}],
+                [{'text': '📊 ស្ថានភាពថវិកា / Budget status'}, {'text': '👤 Profile'}],
                 [{'text': '🆔 My ID'}, {'text': '❓ Help'}]]
         if is_admin_user(uid):
             rows.append([{'text': '🛡 Admin'}])
@@ -314,6 +370,15 @@ def create_app(config=None):
         suffix = '?action=' + action if action else ''
         return {'inline_keyboard': [[{'text': '💰 បើក / Open MyMoney',
             'web_app': {'url': app.config['APP_URL'] + suffix}}]]}
+
+    def insights_buttons():
+        return {'inline_keyboard': [
+            [{'text': '📊 ទិដ្ឋភាពថវិកា / Budget overview', 'web_app': {'url': app.config['APP_URL'] + '/insights'}}],
+            [{'text': '💰 MyMoney', 'web_app': {'url': app.config['APP_URL']}}]]}
+
+    def current_budget(uid):
+        today = datetime.now(TZ).date()
+        return budget_snapshot(engine, transactions, budgets, uid, today.strftime('%Y-%m'), today)
 
     def personal_summary(uid, period):
         today = datetime.now(TZ).date()
@@ -498,6 +563,31 @@ def create_app(config=None):
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'"
         return response
+
+    @app.get('/insights')
+    def insights_page():
+        return send_from_directory(os.path.join(app.root_path, 'insights_ui'), 'index.html')
+
+    @app.get('/insights-assets/<path:filename>')
+    def insights_assets(filename):
+        return send_from_directory(os.path.join(app.root_path, 'insights_ui'), filename)
+
+    @app.put('/api/display-name')
+    @auth
+    def display_name_put():
+        body = json_body()
+        save_profile(g.user['id'], body.get('name'))
+        return {'ok': True, 'name': profile_name(g.user['id'])}
+
+    @app.get('/api/budget-status')
+    @auth
+    def budget_status():
+        today = datetime.now(TZ).date()
+        month = month_value(request.args.get('month', today.strftime('%Y-%m')))
+        result = budget_snapshot(engine, transactions, budgets, g.user['id'], month, today)
+        result['user'] = {'id': g.user['id'], 'name': profile_name(g.user['id']),
+                          'is_admin': is_admin_user(g.user['id'])}
+        return result
 
     @app.get('/')
     def index():
@@ -687,9 +777,7 @@ def create_app(config=None):
                 transactions.c.day >= start, transactions.c.day < end).order_by(transactions.c.day.desc(), transactions.c.id.desc())).mappings().all()
             limits = conn.execute(select(budgets).where(budgets.c.user_id == g.user['id'], budgets.c.month == month)).mappings().all()
             type_limits = conn.execute(select(spending_budgets).where(spending_budgets.c.user_id == g.user['id'], spending_budgets.c.month == month)).mappings().all()
-        with engine.connect() as conn:
-            profile_name = conn.execute(select(personal_tables['profiles'].c.name).where(personal_tables['profiles'].c.user_id == g.user['id'])).scalar_one_or_none()
-        return jsonify(user={'name': profile_name or (os.getenv('ADMIN_DISPLAY_NAME', 'Thearith') if g.user['id'] == admin else g.user.get('first_name', 'Friend')), 'id': g.user['id'], 'is_admin': is_admin_user(g.user['id']), 'is_owner': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
+        return jsonify(user={'name': profile_name(g.user['id']), 'id': g.user['id'], 'is_admin': is_admin_user(g.user['id']), 'is_owner': g.user['id'] == admin}, today=datetime.now(TZ).date().isoformat(),
                        transactions=[serialize(r) for r in rows], budgets=[serialize(r) for r in limits],
                        spending_budgets=[serialize(r) for r in type_limits])
 
@@ -1060,7 +1148,7 @@ def create_app(config=None):
         for row in rows:
             uid = row['user_id']
             status = row['status'] or ('approved' if uid in allowed else 'not_requested')
-            users.append({'id': uid, 'name': row['name'] or 'User', 'last_seen': row['last_seen'],
+            users.append({'id': uid, 'name': profile_name(uid, admin_context=True), 'last_seen': row['last_seen'],
                           'username': row['username'],
                           'status': 'admin' if is_admin_user(uid) else status,
                           'transaction_count': row['transaction_count']})
@@ -1092,7 +1180,7 @@ def create_app(config=None):
                     func.sum(transactions.c.amount)).where(transactions.c.user_id == target_id)
                 .group_by(transactions.c.currency, transactions.c.kind)).all()
         status = access or ('approved' if target_id in allowed else 'not_requested')
-        return {'user': {'id': target_id, 'name': (user or {}).get('admin_label') or (user or {}).get('name', 'User'),
+        return {'user': {'id': target_id, 'name': profile_name(target_id, admin_context=True),
                     'username': (user or {}).get('username'),
                     'last_seen': (user or {}).get('last_seen'), 'status': status},
                 'totals': [{'currency': c, 'kind': k, 'amount': int(amount)} for c, k, amount in totals],
@@ -1733,6 +1821,7 @@ def create_app(config=None):
         raw = message.get('text', '').strip()
         aliases = {'💰 MyMoney':'/open','📊 សង្ខេប / Summary':'/summary',
             '💸 ថ្ងៃនេះអាចចាយ / Daily allowance':'/allowance',
+            '📊 ស្ថានភាពថវិកា / Budget status':'/budgetstatus', '👤 Profile':'/profile',
             '➕ ចំណាយ / Expense':'/expense','💵 ចំណូល / Income':'/income',
             '📅 របាយការណ៍ប្រចាំឆ្នាំ / Yearly report':'/yearly',
             '⚙️ ថវិកាប្រចាំខែ / Monthly budget':'/budget',
@@ -1740,7 +1829,7 @@ def create_app(config=None):
             '🕘 ប្រតិបត្តិការថ្មីៗ / Recent activity':'/recent',
             '🆔 My ID':'/id','❓ Help':'/help','🛡 Admin':'/admin','⏳ Requests':'/requests',
             '🔓 Request access':'/request', '✕ បិទ Menu / Close menu':'/closemenu'}
-        command = aliases.get(raw, raw.split(' ')[0].split('@')[0])
+        command = aliases.get(raw, (raw.split(maxsplit=1) or [''])[0].split('@')[0])
         payload = {'chat_id': chat['id']}
         privacy = 'ឯកជនភាព៖ Admin អាចមើលទិន្នន័យហិរញ្ញវត្ថុក្នុង Bot នេះ។ / Privacy: the owner/admin can review your recorded transactions and budgets.'
         if command == '/closemenu':
@@ -1755,6 +1844,10 @@ def create_app(config=None):
                 '/menu — Show the bot buttons\n'
                 '/request — Request access if your account is not approved\n'
                 '/id — Show your Telegram ID\n'
+                '/profile — Show your saved display name\n'
+                '/name Thearith — Change your app/bot display name\n'
+                '/budgetstatus — Exact monthly budget usage and remaining amount\n'
+                '/insights — Open the budget overview\n'
                 '/summary — Show this month’s income and expenses\n'
                 '/recent — Show your latest five transactions\n'
                 '/allowance — Show your suggested daily spending amount\n'
@@ -1821,6 +1914,24 @@ def create_app(config=None):
         elif not has_access(uid):
             payload['text'] = f'🔒 Access disabled. Telegram ID: {uid}\n' + privacy
             payload['reply_markup'] = {'inline_keyboard': [[{'text':'🔓 Request access','callback_data':'request_access'}]]}
+        elif command == '/profile':
+            role = 'admin' if is_admin_user(uid) else 'approved'
+            payload['text'] = f"👤 {profile_name(uid)}\nTelegram ID: {uid}\nStatus: {role}\n\nប្ដូរឈ្មោះ / Rename: /name Your Name"
+            payload['reply_markup'] = insights_buttons()
+        elif command == '/name':
+            parts = raw.split(maxsplit=1)
+            name = parts[1].strip() if len(parts) == 2 else ''
+            if not 1 <= len(name) <= 80 or any(ord(c) < 32 or ord(c) == 127 for c in name):
+                payload['text'] = 'ប្រើ / Use: /name Thearith (1–80 characters, one line).'
+            else:
+                save_profile(uid, name)
+                payload['text'] = f'✅ បានរក្សាឈ្មោះ / Display name saved: {name}'
+        elif command == '/budgetstatus':
+            payload['text'] = budget_message(current_budget(uid), display_money)
+            payload['reply_markup'] = insights_buttons()
+        elif command == '/insights':
+            payload['text'] = '📊 ទិដ្ឋភាពថវិកា / Monthly budget overview'
+            payload['reply_markup'] = insights_buttons()
         elif command == '/summary':
             payload.update(personal_summary(uid, 'month'))
         elif command == '/recent':

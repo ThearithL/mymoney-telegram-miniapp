@@ -66,8 +66,7 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     def profile_put():
         body=json_body();name=body.get('name');bio=body.get('bio','')
         if not isinstance(name,str) or not 1<=len(name.strip())<=80 or not isinstance(bio,str) or len(bio)>160:abort(400,'Name: 1–80 characters; bio: up to 160.')
-        values={'user_id':g.user['id'],'name':name.strip(),'bio':bio.strip()}
-        with engine.begin() as conn:conn.execute(upsert(profiles).values(**values).on_conflict_do_update(index_elements=['user_id'],set_={'name':values['name'],'bio':values['bio']}))
+        app.extensions['save_profile'](g.user['id'], name, bio)
         return {'ok':True}
 
     @app.get('/api/profile/photo')
