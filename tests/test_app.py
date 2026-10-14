@@ -901,21 +901,21 @@ def test_fx_market_rate_uses_bank_sell_rate_and_requires_auth(client,monkeypatch
     assert 'acledabank.com.kh' in calls[0][0]
 
 
-def test_fx_market_rate_shows_verified_acleda_snapshot_when_source_fails(client,monkeypatch):
+def test_fx_market_rate_keeps_saved_rate_when_no_verified_cache_exists(client,monkeypatch):
     import requests
     import personal_features
+    from bank_rates import SOURCES
     calls=[]
     def fake_get(url,**kwargs):
         calls.append(url)
         raise requests.Timeout('upstream timeout')
     monkeypatch.setattr(personal_features.requests,'get',fake_get)
+    assert client.put('/api/fx',json={'base_currency':'USD','rate_khr_per_usd':'4090'},headers=headers()).status_code==200
     result=client.get('/api/fx/market-rate',headers=headers())
-    assert result.status_code==200
-    assert result.json['rate_khr_per_usd']==4080
-    assert result.json['live'] is False
-    assert result.json['date']=='October 9, 2026 8:10 AM'
-    assert 'ACLEDA Bank' in result.json['source']
-    assert calls==['https://www.acledabank.com.kh/assets/unity/exchangerate']
+    assert result.status_code==503
+    assert 'rate_khr_per_usd' not in result.json
+    assert client.get('/api/fx',headers=headers()).json['rate_khr_per_usd']==4090
+    assert calls==list(SOURCES)
 
 
 def test_profile_photo_is_private_validated_and_removable(client):
@@ -1115,3 +1115,4 @@ def test_debt_partial_repayments_crud_balance_and_audit_history(client):
     assert record['paid_total']==1400 and record['remaining']==1150 and record['status']=='open'
     actions=[event['action'] for event in client.get(f'/api/debts/{debt}/history',headers=headers()).json['events']]
     assert 'payment_added' in actions and 'payment_updated' in actions and 'payment_deleted' in actions
+

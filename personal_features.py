@@ -2,7 +2,7 @@
 import io,json,time,uuid,warnings
 import requests
 import re
-from html.parser import HTMLParser
+from bank_rates import market_quote
 from datetime import date,datetime
 from decimal import Decimal,InvalidOperation
 from zoneinfo import ZoneInfo
@@ -548,62 +548,10 @@ def register_features(app,engine,transactions,tables,auth,json_body,amount_units
     @app.get('/api/fx/market-rate')
     @auth
     def fx_market_rate():
-        """Return only ACLEDA's current USD/KHR sell (ask) rate."""
-        url='https://www.acledabank.com.kh/assets/unity/exchangerate'
-        # Last verified ACLEDA sell quote from its published page on Oct 9, 2026.
-        # It is explicitly marked as a snapshot whenever Render cannot reach ACLEDA.
-        last_verified_rate=4080.0
-        last_verified_date='October 9, 2026 8:10 AM'
-        def stale_snapshot():
-            return {'rate_khr_per_usd':last_verified_rate,'sell_rate':last_verified_rate,'date':last_verified_date,'source':'ACLEDA Bank (last verified sell rate; live refresh unavailable)','source_url':url,'live':False}
-        headers={
-            'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language':'en-US,en;q=0.9,km;q=0.8',
-            'Referer':'https://www.acledabank.com.kh/',
-            'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-        }
-
-        class RateTableParser(HTMLParser):
-            def __init__(self):
-                super().__init__();self.rows=[];self.row=None;self.cell=None;self.text=[]
-            def handle_starttag(self,tag,attrs):
-                if tag=='tr':self.row=[]
-                elif tag in ('td','th') and self.row is not None:self.cell=[]
-            def handle_data(self,data):
-                value=data.strip()
-                if value:
-                    self.text.append(value)
-                    if self.cell is not None:self.cell.append(value)
-            def handle_endtag(self,tag):
-                if tag in ('td','th') and self.row is not None and self.cell is not None:
-                    self.row.append(' '.join(self.cell));self.cell=None
-                elif tag=='tr' and self.row is not None:
-                    self.rows.append(self.row);self.row=None
-
-        try:
-            response=requests.get(url,headers=headers,timeout=(5,15))
-            response.raise_for_status()
-            parser=RateTableParser();parser.feed(response.text)
-        except (requests.RequestException,ValueError) as exc:
-            app.logger.warning('ACLEDA exchange-rate fetch failed: %s',exc)
-            return stale_snapshot()
-
-        numbers=re.compile(r'(?<![A-Za-z])(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)')
-        for row in parser.rows:
-            first=' '.join(row[:1]).upper()
-            if 'USD' not in first or 'KHR' not in first:continue
-            values=[]
-            for cell in row[1:]:
-                values.extend(float(value.replace(',','')) for value in numbers.findall(cell))
-            if len(values)<2:continue
-            bid,ask=values[:2]
-            if not (1000<=bid<=10000 and 1000<=ask<=10000):continue
-            page_text=' '.join(parser.text)
-            stamp=re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*[AP]M)?',page_text,re.I)
-            return {'rate_khr_per_usd':round(ask,4),'sell_rate':ask,'date':stamp.group(0) if stamp else '', 'source':'ACLEDA Bank (sell rate)','source_url':url,'live':True}
-
-        app.logger.warning('ACLEDA exchange-rate page loaded but no valid USD/KHR sell quote was parsed.')
-        return stale_snapshot()
+        quote = market_quote(engine, app.extensions['bank_rate_cache'], app.logger)
+        if quote is None:
+            abort(503, 'ACLEDA rate unavailable. Your saved display rate is unchanged. Please retry.')
+        return quote
 
     @app.put('/api/fx')
     @auth

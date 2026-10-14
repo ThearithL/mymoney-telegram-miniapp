@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from admin_panel import AdminPanel, money as display_money
 from personal_features import define_tables, register_features, archive_rows
 from insights import budget_snapshot, budget_message
+from bank_rates import define_cache
 
 load_dotenv()
 CATEGORIES = ['food', 'coffee', 'transport', 'shopping', 'bills', 'study', 'health', 'other', 'salary']
@@ -110,6 +111,7 @@ delete_batches = Table('delete_batches', metadata,
 
 
 personal_tables = define_tables(metadata)
+bank_rate_cache = define_cache(metadata)
 
 def validate_init_data(raw, token, now=None):
     """Never trust initDataUnsafe or a user ID from a request body."""
@@ -228,6 +230,7 @@ def create_app(config=None):
         with engine.begin() as conn:
             conn.execute(text('ALTER TABLE savings_goals ADD COLUMN target_date DATE'))
     app.extensions['engine'] = engine
+    app.extensions['bank_rate_cache'] = bank_rate_cache
     allowed = {int(x.strip()) for x in app.config['ALLOWED_USER_IDS'].split(',') if x.strip()}
 
     admin = int(app.config['ADMIN_USER_ID'] or 0)
