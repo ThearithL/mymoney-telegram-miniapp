@@ -4,7 +4,7 @@
   "functions": {
     "wsgi.py": {
       "maxDuration": 60,
-      "includeFiles": ["static/**", "insights_ui/**"]
+      "includeFiles": "{static,insights_ui}/**"
     }
   },
   "headers": [
