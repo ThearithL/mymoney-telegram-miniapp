@@ -19,6 +19,7 @@ from werkzeug.security import check_password_hash
 from sqlalchemy import (create_engine, MetaData, Table, Column, Integer, BigInteger,
                         String, Text, Date, UniqueConstraint, select, insert, update, delete, func, text, inspect, union)
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.pool import NullPool
 from admin_panel import AdminPanel, money as display_money
 from personal_features import define_tables, register_features, archive_rows
 from insights import budget_snapshot, budget_message
@@ -186,7 +187,9 @@ def create_app(config=None):
     url = app.config['DATABASE_URL']
     if url.startswith(('postgres://', 'postgresql://')):
         url = 'postgresql+psycopg://' + url.split('://', 1)[1]
-    engine = create_engine(url, pool_pre_ping=True)
+    # Neon provides connection pooling; do not retain idle connections in scaled functions.
+    engine_options = {"poolclass": NullPool, "connect_args": {"connect_timeout": 10}} if os.getenv("VERCEL") == "1" and url.startswith("postgresql") else {}
+    engine = create_engine(url, pool_pre_ping=True, **engine_options)
     metadata.create_all(engine)
     # Additive migration for existing Neon/SQLite installs.
     if 'items_json' not in {column['name'] for column in inspect(engine).get_columns('transactions')}:

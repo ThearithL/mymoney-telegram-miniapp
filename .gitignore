@@ -3,3 +3,9 @@
 __pycache__/
 *.db
 .pytest_cache/
+
+.vercel/
+public/
+.env.*
+!.env.example
+!.env.vercel.example
