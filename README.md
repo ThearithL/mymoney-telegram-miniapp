@@ -7,8 +7,12 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Telegram persistent menu, quick expense/income buttons and inline Mini App launch.
 - Daily expense chart with data table; today/week/month summaries in app and bot.
 - Savings goals with progress and estimated finish time; add or withdraw savings with a separate dated history, once-per-goal 50/80/100% Telegram alerts, and edit/delete. Completed goals can be hidden and restored without losing their savings history. Savings movements do not create expense or income transactions.
+- Quick-entry keypad screen for Add expense / Add income: ៛/$ toggle, big amount display, cash/bank, date and need/want pills, category and memo chips (recent notes + presets + write your own), custom 0–9 / 00 (or decimal point for USD) keypad and a bottom save bar. It submits through the same form and API as before; editing, favorites, quick buttons and itemised expenses still use the full form (use **More options** on the keypad to switch).
 - Light/dark/system themes, quick-entry drafts, loading animations and retry messages.
 - Budget alerts at 80% and 100% in app and Telegram.
+- Spending calendar (Insights page): every day of the selected month as a heat-map of expenses in your display currency, with busiest day, daily average, and tap-a-day to list that day's entries.
+- Clean, modern look: soft cards, floating bottom navigation, rounded controls; light and dark themes (`static/clean.css`).
+- Telegram reminders you control in Settings → Notifications: an optional daily "log your spending" nudge at an hour you choose (skipped if you already logged something that day) and debt/loan due-date reminders (due soon, due today, overdue). Includes a "Send a test message" button.
 - Set a monthly expense cap for the selected month and display currency; update it any time, with an in-app progress bar and Telegram warning.
 - Set separate monthly spending caps for needs and wants; each shows a progress bar and an in-app warning near or over the limit.
 - Mark each expense as a need or a want. See the split for the selected month and year.
@@ -32,7 +36,7 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Server-side Telegram initData signature/age verification, user allowlist, per-user data isolation.
 - Duplicate create retries reuse a request ID; SQLAlchemy supports SQLite and PostgreSQL.
 
-**Scope:** This version implements the core tracker. Scheduled reminders, OCR, voice recognition, bank integration and account transfers are not included. The exchange rate is manually editable and used for display totals only; it is not a live market quote. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
+**Scope:** This version implements the core tracker. OCR, voice recognition, bank integration and account transfers are not included. The exchange rate is manually editable and used for display totals only; it is not a live market quote. The dashboard net figure is selected-month income minus expenses, not a verified bank balance. Cash/bank are labels only. CSV downloads may depend on Telegram client support; try Telegram Desktop if mobile download is blocked.
 
 ## 1. Create your Telegram bot
 
@@ -124,6 +128,24 @@ The Mini App checks Render's Deploy API when an external uptime monitor calls `/
 Add `RENDER_API_KEY` and a long random `RENDER_WATCH_SECRET` in Render → Environment. Render automatically provides `RENDER_SERVICE_ID`. Keep `BOT_TOKEN` and numeric `ADMIN_USER_ID` set there, and send `/start` to the bot as Admin. Configure a separate HTTP monitor (for example, UptimeRobot) to request `https://YOUR-APP.onrender.com/ops/render-deploy-watch/YOUR_SECRET` every five minutes. Treat the monitor URL as a secret. The endpoint returns a pending status while a deploy is in progress and checks again at the next monitor request.
 
 This is polling, so notices can be delayed up to the monitor interval. It requires the existing service to be reachable when the monitor calls it; if the service is fully unavailable, it cannot notify through itself. Render's direct workspace webhooks can deliver official deploy events, but require a Pro workspace.
+
+## Reminder notifications
+
+Users choose their reminders in **Settings → Notifications**:
+
+| Reminder | Default | What it does |
+| --- | --- | --- |
+| Daily spending reminder | Off | At the chosen hour (Phnom Penh time, sent within a 3-hour window) tells the user they haven't logged anything today. Skipped if they already saved a transaction that day. |
+| Debt due-date reminders | On | From 09:00, one grouped message listing debts that are due in N days (0–7, user's choice), due today, or overdue by up to 14 days. Each stage is announced once per debt; changing a due date re-arms it. Only open debts with a due date, and only the remaining (unpaid) balance. |
+
+Reminders are sent by the bot, so each user must have started the bot (`/start`) once. The **Send a test message** button confirms delivery.
+
+Something has to trigger the check, because the app only runs code when it is awake. Pick one or both (duplicate sends are impossible because every message is recorded in `notification_log` before it is sent):
+
+1. **External monitor (recommended on hosts that sleep idle services).** Set `REMINDER_SECRET` to a long random value (if empty, `RENDER_WATCH_SECRET` is used) and make an uptime monitor request `https://YOUR-APP.onrender.com/ops/reminders/YOUR_SECRET` every 5–15 minutes. Treat the URL as a secret. The response is JSON such as `{"ok":true,"daily":1,"debt":2,"skipped":0,"failed":0}`.
+2. **Built-in scheduler.** Set `REMINDER_SCHEDULER=1`; the web process checks every 5 minutes while it is running.
+
+If Telegram rejects a message (for example the user never started the bot), the reminder is released and retried on the next check. Reminder history is kept for 90 days.
 
 ## 4. Everyday use
 

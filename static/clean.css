@@ -1,0 +1,49 @@
+/* Clean, modern layer. Loaded last; only uses the app's existing theme variables. */
+:root{--r-card:20px;--r-ctl:14px;--shadow:0 1px 2px rgba(20,45,32,.04),0 8px 24px rgba(20,45,32,.06)}
+:root[data-theme="dark"]{--shadow:0 1px 2px rgba(0,0,0,.25),0 8px 24px rgba(0,0,0,.28)}
+body{letter-spacing:.005em}
+.shell{padding-left:18px;padding-right:18px}
+.page-heading{margin-bottom:14px}
+.eyebrow{font-size:10.5px;letter-spacing:.16em;font-weight:700;color:var(--muted)}
+h2{font-size:21px;letter-spacing:-.01em}
+h3{font-size:15px}
+.card{background:var(--card);border:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:var(--r-card);box-shadow:var(--shadow);padding:18px;margin:0 0 14px}
+.section-title{align-items:center;margin-bottom:10px}
+.muted{line-height:1.6}
+input,select,textarea{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);min-height:46px;padding:0 14px;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 4px color-mix(in srgb,var(--green) 16%,transparent);outline:0}
+label{font-weight:600;font-size:13px}
+.primary{border:0;border-radius:var(--r-ctl);min-height:48px;font-weight:700;background:var(--green);box-shadow:0 6px 16px color-mix(in srgb,var(--green) 30%,transparent);transition:transform .12s,box-shadow .12s}
+.primary:active{transform:scale(.98);box-shadow:none}
+.secondary{border-radius:var(--r-ctl);min-height:46px;font-weight:650;background:var(--soft);color:var(--green)}
+.chips button{border-radius:999px;border:1px solid var(--line);background:var(--card);padding:8px 14px;min-height:38px}
+.chips button.selected{background:var(--green);border-color:var(--green);color:var(--card)}
+.row{background:var(--card);border:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:16px;padding:12px 14px;margin-bottom:8px;transition:transform .12s,background .12s}
+.row:active{transform:scale(.99);background:var(--soft)}
+.row-icon{border-radius:12px;background:var(--soft)}
+progress{height:8px;border-radius:999px;overflow:hidden}
+nav{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));transform:none;width:auto;max-width:536px;margin:0 auto;border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:24px;padding:6px;box-shadow:0 12px 36px rgba(20,45,32,.16)}
+nav button{border:0;background:transparent;border-radius:18px;padding:8px 4px;color:var(--muted);transition:background .15s,color .15s}
+nav button.active,nav button[aria-current="page"]{background:var(--soft);color:var(--green)}
+.shell{padding-bottom:calc(112px + env(safe-area-inset-bottom))}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* Spending calendar */
+.cal-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.cal-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.cal-stat{background:var(--soft);border-radius:14px;padding:10px 12px}
+.cal-stat small{display:block;color:var(--muted);font-size:11px}
+.cal-stat b{font-size:14px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);padding:2px 0}
+.cal-day{aspect-ratio:1;min-height:0;border:1px solid transparent;border-radius:12px;background:var(--soft);color:var(--ink);font-size:13px;font-weight:600;padding:0;display:grid;place-items:center}
+.cal-day[data-level="1"],.cal-legend i[data-level="1"]{background:color-mix(in srgb,var(--green) 22%,var(--card))}
+.cal-day[data-level="2"],.cal-legend i[data-level="2"]{background:color-mix(in srgb,var(--green) 40%,var(--card))}
+.cal-day[data-level="3"],.cal-legend i[data-level="3"]{background:color-mix(in srgb,var(--green) 58%,var(--card))}
+.cal-day[data-level="4"],.cal-legend i[data-level="4"]{background:color-mix(in srgb,var(--green) 78%,var(--card));color:#fff}
+.cal-day.today{border-color:var(--green)}
+.cal-day.selected{outline:3px solid color-mix(in srgb,var(--green) 45%,transparent);outline-offset:1px}
+.cal-blank{visibility:hidden}
+.cal-legend{display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:10px;font-size:11px;color:var(--muted)}
+.cal-legend i{width:14px;height:14px;border-radius:5px;background:var(--soft)}
+#calendarDayTitle{margin:14px 0 8px;font-size:14px}

@@ -30,3 +30,7 @@ services:
         sync: false
       - key: RENDER_WATCH_SECRET
         sync: false
+      - key: REMINDER_SECRET
+        sync: false
+      - key: REMINDER_SCHEDULER
+        value: "1"
