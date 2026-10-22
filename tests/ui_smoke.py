@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory() as temp:
                     page.locator('#theme').select_option('dark' if language=='km' else 'light')
                 if width==320:
                     page.locator('[data-page="home"]').click()
-                    page.locator('#addExpense').click();page.locator('#amount').fill('5000');page.locator('#note').fill('Favorite test')
+                    page.evaluate('openEntry("expense")');page.locator('#amount').fill('5000');page.locator('#note').fill('Favorite test')
                     page.locator('#saveFavoriteFromEntry').click();page.locator('#favoriteTitle').fill('My snack')
                     page.locator('#favoriteForm button.primary').click()
                     wait_state(page,'() => document.querySelectorAll(".favorite-item").length === 1')
