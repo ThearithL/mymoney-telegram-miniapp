@@ -12,6 +12,9 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Budget alerts at 80% and 100% in app and Telegram.
 - Spending calendar (Insights page): every day of the selected month as a heat-map of expenses in your display currency, with busiest day, daily average, and tap-a-day to list that day's entries.
 - Clean, modern look: soft cards, floating bottom navigation, rounded controls; light and dark themes (`static/clean.css`).
+- Bills & subscriptions (`recurring.py`, `static/recurring.js`): save rent, subscriptions or regular income once; tap **Mark paid / Mark received** each month to record a normal entry (once per month per item). Home card shows what is due next.
+- Notification center: bell in the header with in-app alerts for budget 80%/100%, debts, bills, savings goals and "nothing logged today" (`/api/notifications/feed`). New Telegram reminders for bills and an optional Sunday weekly summary, both in Settings → Notifications.
+- Spacious layout (`static/spacious.css`): larger gutters, card padding, tap targets and a wider desktop layout.
 - Telegram reminders you control in Settings → Notifications: an optional daily "log your spending" nudge at an hour you choose (skipped if you already logged something that day) and debt/loan due-date reminders (due soon, due today, overdue). Includes a "Send a test message" button.
 - Set a monthly expense cap for the selected month and display currency; update it any time, with an in-app progress bar and Telegram warning.
 - Set separate monthly spending caps for needs and wants; each shows a progress bar and an in-app warning near or over the limit.
