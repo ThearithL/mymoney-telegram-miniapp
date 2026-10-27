@@ -1,0 +1,67 @@
+/* Entry form (Add expense / Add income / Edit). Loaded last. Uses only the app's theme variables, so light and dark both work.
+   The native controls stay in the DOM (hidden) so validation, saving, itemised expenses and favorites are unchanged. */
+:root{--ex-on:#fff}
+:root[data-theme="dark"]{--ex-on:#10281e}
+
+/* ---- sheet ---- */
+#entryDialog{width:100%;max-width:560px;margin:auto auto 0;padding:0;border:0;border-radius:28px 28px 0 0;max-height:94dvh;overflow-y:auto;overscroll-behavior:contain;background:var(--card);color:var(--ink)}
+#entryDialog::before{content:"";display:block;width:40px;height:4px;border-radius:99px;background:var(--line);margin:10px auto 0}
+#entryDialog[open]{animation:ex-up .26s cubic-bezier(.2,.8,.2,1)}
+@keyframes ex-up{from{transform:translateY(28px);opacity:0}to{transform:none;opacity:1}}
+@media(min-width:640px){#entryDialog{margin:auto;border-radius:28px;max-height:90dvh}#entryDialog::before{display:none}}
+@media(prefers-reduced-motion:reduce){#entryDialog[open]{animation:none}}
+#entryForm{display:block;padding:6px 22px 0}
+#entryForm>.section-title{margin:10px 0 16px}
+#entryTitle{margin:0;font-size:20px;display:flex;align-items:center;gap:10px}
+#entryTitle::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--red);flex:none}
+#entryDialog[data-kind="income"] #entryTitle::before{background:var(--green)}
+
+/* ---- hide native controls that the new UI drives ---- */
+#entryDialog .ex-hide{display:none!important}
+#entryDialog .ex-sr{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
+
+/* ---- amount ---- */
+.ex-hero{background:var(--bg);border:1px solid var(--line);border-radius:24px;padding:14px 16px 16px}
+.ex-seg{display:flex;gap:4px;padding:4px;background:var(--soft);border-radius:14px}
+.ex-seg button{flex:1;min-height:42px;border:0;border-radius:11px;background:transparent;color:var(--muted);font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 10px;transition:background .15s,color .15s}
+.ex-seg button[aria-checked="true"]{background:var(--green);color:var(--ex-on);box-shadow:0 4px 12px color-mix(in srgb,var(--green) 28%,transparent)}
+.ex-seg button:disabled{opacity:.55;cursor:not-allowed}
+.ex-amount{display:flex;align-items:center;gap:8px;margin:14px 2px 0}
+.ex-sym{font-size:30px;font-weight:700;color:var(--muted);line-height:1}
+#entryDialog .ex-amount input{flex:1;min-width:0;width:100%;min-height:64px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font-size:46px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+#entryDialog .ex-amount input::placeholder{color:color-mix(in srgb,var(--muted) 55%,transparent)}
+#entryDialog .ex-amount input::-webkit-outer-spin-button,#entryDialog .ex-amount input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+#entryDialog .ex-amount input:focus{box-shadow:none}
+.ex-conv{min-height:20px;margin:2px 4px 10px;color:var(--muted);font-size:13px}
+.ex-quick{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.ex-quick::-webkit-scrollbar{display:none}
+
+/* ---- chips ---- */
+.ex-label{display:block;margin:24px 0 10px;font-size:13px;font-weight:700;color:var(--muted)}
+.ex-chip{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;padding:0 15px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);font-weight:600;white-space:nowrap;transition:background .15s,border-color .15s,color .15s,transform .1s}
+.ex-chip:active{transform:scale(.97)}
+.ex-chip[aria-pressed="true"]{background:var(--soft);border-color:var(--green);color:var(--green)}
+.ex-chip:disabled{opacity:.5;cursor:not-allowed}
+.ex-chip.ex-ghost{background:transparent;color:var(--muted);border-style:dashed}
+.ex-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.ex-cat{flex-direction:column;gap:4px;min-height:72px;padding:10px 6px;border-radius:18px;white-space:normal}
+.ex-cat .ex-ic{font-size:24px;line-height:1}
+.ex-cat .ex-tx{font-size:12px;line-height:1.3;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-row{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.ex-row::-webkit-scrollbar{display:none}
+.ex-wrap{display:flex;flex-wrap:wrap;gap:8px}
+#entryDialog[data-kind="income"] .ex-need{display:none}
+
+/* ---- note ---- */
+#entryForm .ex-note{margin:12px 0 0}
+#entryForm #note{width:100%}
+
+/* ---- secondary links ---- */
+#entryForm .text-btn{margin:14px 0 0;min-height:40px;padding:0 4px}
+#entryForm #formError:not(:empty){margin:14px 0 0;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--red) 12%,var(--card));color:var(--red);font-weight:600}
+
+/* ---- sticky save bar ---- */
+.ex-footer{position:sticky;bottom:0;display:flex;flex-direction:column;gap:10px;margin:22px -22px 0;padding:16px 22px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--card) 80%,transparent)}
+#entryDialog .ex-footer #saveEntry,#entryDialog .ex-footer #deleteEntry{width:100%;margin:0}
+#entryDialog .ex-footer #saveEntry{min-height:56px;font-size:16px}
+#entryDialog .ex-footer #deleteEntry:not([hidden]){min-height:46px}
