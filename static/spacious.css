@@ -128,3 +128,15 @@ header .privacy-toggle{margin-left:0}
 /* More-tools buttons wrap instead of overflowing narrow phones. */
 .personal-tools{flex-wrap:wrap}
 .personal-tools button{flex:1 1 140px;min-width:0}
+
+/* ---- month-end forecast ---- */
+.forecast-card{margin-top:var(--gap)}
+.fc-label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}
+.fc-amount{display:block;font-size:28px;font-variant-numeric:tabular-nums;margin-bottom:6px}
+.fc-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.fc-stats>div{background:var(--soft);border-radius:14px;padding:12px 14px}
+.fc-stats small{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
+.fc-bar{height:8px;border-radius:999px;background:var(--soft);overflow:hidden;margin:4px 0 14px}
+.fc-bar span{display:block;height:100%;border-radius:inherit;background:var(--green)}
+.fc-note{margin:0;line-height:1.55;font-weight:600}
+.fc-ok{color:var(--green)}.fc-warn{color:#b27b14}.fc-bad{color:var(--red)}

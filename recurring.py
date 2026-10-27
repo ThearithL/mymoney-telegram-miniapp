@@ -9,10 +9,9 @@ Reminders for due items are sent by ``notifications.run_reminders`` and the in-a
 notification center also lists them.
 """
 import calendar
-import time
 from datetime import date, datetime
 
-from flask import abort, g, request
+from flask import abort, g
 from sqlalchemy import (BigInteger, Column, Integer, String, Table, delete, insert,
                         select, update)
 from sqlalchemy.exc import IntegrityError

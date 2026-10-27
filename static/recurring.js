@@ -86,13 +86,12 @@ async function markDone(item,button){
     await loadBills();
     if(typeof load==='function')load();
     window.refreshInbox?.();
-  }catch(error){toast_error(error.message);}
+  }catch(error){notify(error.message);}
   finally{busyNow=false;busy(button,false);}
 }
-function toast_error(message){notify(message);}
 async function toggleActive(item){
   try{await api(`/api/recurring/${item.id}/active`,{method:'POST',body:JSON.stringify({active:!item.active})});await loadBills();window.refreshInbox?.();}
-  catch(error){toast_error(error.message);}
+  catch(error){notify(error.message);}
 }
 
 // ---- add / edit dialog ----
