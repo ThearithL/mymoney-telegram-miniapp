@@ -7,7 +7,6 @@ A complete, self-hosted personal expense tracker: Python/Flask API + Telegram bo
 - Telegram persistent menu, quick expense/income buttons and inline Mini App launch.
 - Daily expense chart with data table; today/week/month summaries in app and bot.
 - Savings goals with progress and estimated finish time; add or withdraw savings with a separate dated history, once-per-goal 50/80/100% Telegram alerts, and edit/delete. Completed goals can be hidden and restored without losing their savings history. Savings movements do not create expense or income transactions.
-- Quick-entry keypad screen for Add expense / Add income: ៛/$ toggle, big amount display, cash/bank, date and need/want pills, category and memo chips (recent notes + presets + write your own), custom 0–9 / 00 (or decimal point for USD) keypad and a bottom save bar. It submits through the same form and API as before; editing, favorites, quick buttons and itemised expenses still use the full form (use **More options** on the keypad to switch).
 - Light/dark/system themes, quick-entry drafts, loading animations and retry messages.
 - Budget alerts at 80% and 100% in app and Telegram.
 - Spending calendar (Insights page): every day of the selected month as a heat-map of expenses in your display currency, with busiest day, daily average, and tap-a-day to list that day's entries.
