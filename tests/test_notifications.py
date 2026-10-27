@@ -97,11 +97,13 @@ def test_settings_defaults_roundtrip_validation_and_isolation(project):
     app, client, calls, state = project
     assert client.get('/api/notifications').status_code == 401
     assert client.get('/api/notifications', headers=headers()).json == {
-        'daily_enabled': False, 'daily_hour': 20, 'debt_enabled': True, 'debt_days_before': 1}
+        'daily_enabled': False, 'daily_hour': 20, 'debt_enabled': True, 'debt_days_before': 1,
+        'bill_enabled': True, 'weekly_enabled': False}
     saved = settings(client, daily_enabled=True, daily_hour=7, debt_days_before=3)
     assert saved.status_code == 200
     assert client.get('/api/notifications', headers=headers()).json == {
-        'daily_enabled': True, 'daily_hour': 7, 'debt_enabled': True, 'debt_days_before': 3}
+        'daily_enabled': True, 'daily_hour': 7, 'debt_enabled': True, 'debt_days_before': 3,
+        'bill_enabled': True, 'weekly_enabled': False}
     assert client.get('/api/notifications', headers=headers(OTHER)).json['daily_enabled'] is False
     for bad in ({'daily_hour': 24}, {'daily_hour': -1}, {'debt_days_before': 8}, {'daily_hour': '9'},
                 {'daily_enabled': 1}, {'debt_enabled': 'yes'}, {'daily_hour': True}):
