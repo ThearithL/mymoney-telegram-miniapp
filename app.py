@@ -25,6 +25,7 @@ from insights import budget_snapshot, budget_message
 from bank_rates import define_cache
 from notifications import define_tables as define_notification_tables, register_notifications
 from recurring import define_tables as define_recurring_tables, register_recurring
+from reminders import define_tables as define_reminder_tables, register_reminders
 
 load_dotenv()
 CATEGORIES = ['food', 'coffee', 'transport', 'shopping', 'bills', 'study', 'health', 'other', 'salary']
@@ -116,6 +117,7 @@ personal_tables = define_tables(metadata)
 # Reminder tables are per-user, so account erasure (which loops over personal_tables) covers them.
 personal_tables.update(define_notification_tables(metadata))
 personal_tables.update(define_recurring_tables(metadata))
+personal_tables.update(define_reminder_tables(metadata))
 bank_rate_cache = define_cache(metadata)
 
 def validate_init_data(raw, token, now=None):
@@ -1959,6 +1961,7 @@ def create_app(config=None):
     register_features(app, engine, transactions, personal_tables, auth, json_body, amount_units, month_value, CATEGORIES)
     register_recurring(app, engine, personal_tables, transactions, auth, json_body, amount_units,
                        CATEGORIES, personal_tables['custom_categories'], TZ, budget_warning)
+    register_reminders(app, engine, personal_tables, savings_goals, auth, json_body, amount_units, TZ)
     register_notifications(app, engine, personal_tables, transactions, personal_tables['debts'],
                            personal_tables['debt_payments'], auth, json_body, telegram, has_access, TZ,
                            budgets=budgets, goals=savings_goals)

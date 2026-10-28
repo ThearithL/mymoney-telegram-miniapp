@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from admin_panel import money
 from insights import budget_snapshot
 from recurring import cycle_info, posted_keys
+from reminders import feed_items as reminder_feed_items
 
 DEFAULTS = {'daily_enabled': 0, 'daily_hour': 20, 'debt_enabled': 1, 'debt_days_before': 1}
 # Newer preferences live in their own table so existing databases need no column migration.
@@ -47,6 +48,8 @@ DEBT_LOOKAHEAD_DAYS = 7     # largest "days before due" a user can choose
 OVERDUE_DAYS = 14           # stop nagging about debts overdue for longer than this
 LOG_RETENTION_DAYS = 90
 TEST_COOLDOWN_SECONDS = 30
+CUSTOM_CATCHUP_DAYS = 2     # reminders missed while the app slept are still sent for this many days
+CUSTOM_DEFAULT_HOUR = 8     # reminders without a time go out from 08:00 local time
 
 
 def define_tables(metadata):
@@ -117,6 +120,20 @@ def bill_line(item, days_until):
     return f"• {icon} {item['title']}: {money(item['amount'], item['currency'])} · {when_text(days_until)}"
 
 
+def custom_line(item, days_until):
+    parts = [f"\u2022 {item['title']}", item['remind_date'].strftime('%d/%m/%Y')]
+    if item['remind_time']:
+        parts.append(item['remind_time'])
+    if item['amount'] is not None and item['currency']:
+        parts.append(money(item['amount'], item['currency']))
+    line = ' \u00b7 '.join(parts)
+    if days_until < 0:
+        line += f" \u00b7 {when_text(days_until)}"
+    if item['note']:
+        line += '\n   ' + item['note'][:200]
+    return line
+
+
 def weekly_text(start, totals, top, previous):
     """Build the Sunday summary. ``totals`` is {(currency, kind): (sum, count)}."""
     lines = [f"📅 សង្ខេបប្រចាំសប្តាហ៍ / Weekly summary\n{start.isoformat()} → {(start + timedelta(days=6)).isoformat()}"]
@@ -143,6 +160,7 @@ def register_notifications(app, engine, tables, transactions, debts, debt_paymen
     extra = tables['notification_extra']
     log = tables['notification_log']
     recurring = tables['recurring_items']
+    reminders = tables.get('reminders')
     last_test = {}
 
     # ---- helpers -------------------------------------------------------------------
@@ -336,6 +354,42 @@ def register_notifications(app, engine, tables, transactions, debts, debt_paymen
                     release(uid, 'bill', ref)
                 stats['failed'] += 1
 
+    def run_custom(now, stats):
+        """Telegram message for user reminders once their date (and time, if set) is reached."""
+        if reminders is None:
+            return
+        today = now.date()
+        with engine.connect() as conn:
+            rows = conn.execute(select(reminders).where(
+                reminders.c.remind_date <= today,
+                reminders.c.remind_date >= today - timedelta(days=CUSTOM_CATCHUP_DAYS)
+            ).order_by(reminders.c.remind_date.asc(), reminders.c.id.asc())).mappings().all()
+        by_user = {}
+        for row in rows:
+            if row['remind_date'] == today:
+                due_time = row['remind_time'] or f'{CUSTOM_DEFAULT_HOUR:02d}:00'
+                if now.strftime('%H:%M') < due_time:
+                    continue
+            by_user.setdefault(row['user_id'], []).append(row)
+        for uid, items in by_user.items():
+            if not has_access(uid):
+                stats['skipped'] += 1
+                continue
+            claimed, lines = [], []
+            for item in items:
+                ref = f"{item['id']}:{item['remind_date'].isoformat()}:{item['remind_time'] or ''}"
+                if claim(uid, 'custom', ref):
+                    claimed.append(ref)
+                    lines.append(custom_line(item, (item['remind_date'] - today).days))
+            if not claimed:
+                continue
+            if send(uid, '\u23f0 \u1780\u17b6\u179a\u179a\u17c6\u179b\u17b9\u1780 / Reminder\n' + '\n'.join(lines)):
+                stats['custom'] += len(claimed)
+            else:
+                for ref in claimed:
+                    release(uid, 'custom', ref)
+                stats['failed'] += 1
+
     def week_totals(conn, uid, start):
         end = start + timedelta(days=7)
         rows = conn.execute(select(transactions.c.currency, transactions.c.kind,
@@ -387,10 +441,11 @@ def register_notifications(app, engine, tables, transactions, debts, debt_paymen
             now = now.replace(tzinfo=tz)
         else:
             now = now.astimezone(tz)
-        stats = {'daily': 0, 'debt': 0, 'bill': 0, 'weekly': 0, 'skipped': 0, 'failed': 0}
+        stats = {'daily': 0, 'debt': 0, 'bill': 0, 'custom': 0, 'weekly': 0, 'skipped': 0, 'failed': 0}
         run_daily(now, stats)
         run_debts(now, stats)
         run_bills(now, stats)
+        run_custom(now, stats)
         run_weekly(now, stats)
         with engine.begin() as conn:
             conn.execute(delete(log).where(log.c.sent_at < int(time.time()) - LOG_RETENTION_DAYS * 86400))
@@ -459,6 +514,10 @@ def register_notifications(app, engine, tables, transactions, debts, debt_paymen
             done = posted_keys(conn, transactions, uid, today, [r['id'] for r in bill_rows])
             logged_today = conn.execute(select(func.count()).select_from(transactions).where(
                 transactions.c.user_id == uid, transactions.c.day == today)).scalar()
+            reminder_rows = []
+            if reminders is not None:
+                reminder_rows = conn.execute(select(reminders).where(
+                    reminders.c.user_id == uid, reminders.c.remind_date <= today)).mappings().all()
             goal_rows = []
             if goals is not None:
                 goal_rows = conn.execute(select(goals).where(
@@ -509,6 +568,8 @@ def register_notifications(app, engine, tables, transactions, debts, debt_paymen
                 items.append({'id': f"goal:{goal['id']}:{level}", 'type': 'goal', 'level': 'info',
                               'data': {'title': goal['title'], 'level': level, 'currency': goal['currency'],
                                        'saved': goal['saved'], 'target': goal['target']}})
+
+        items.extend(reminder_feed_items(reminder_rows, today))
 
         if now.hour >= NO_LOG_FEED_HOUR and not logged_today:
             items.append({'id': f'nolog:{today.isoformat()}', 'type': 'nolog', 'level': 'info', 'data': {}})
